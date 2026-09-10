@@ -15,12 +15,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body
         style={{
           margin: 0,
-          padding: "48px 24px",
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          padding: 0,
+          fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
           fontSize: 14,
           lineHeight: 1.7,
-          color: "#14171f",
-          background: "#fbfbfd",
+          color: "var(--ink, #14171f)",
+          background: "var(--page-bg, #fbfbfd)",
         }}
       >
         {children}

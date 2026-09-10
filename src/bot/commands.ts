@@ -7,21 +7,27 @@ import { b, code, esc } from "@/lib/telegram/html";
 import { LIMITS, meter } from "@/lib/rate-limit";
 import { claimOnce } from "@/lib/store";
 import { compactUsd, move, pad, shortAddress, usd } from "@/lib/format";
-import { automateLink, bstocksUrl, evenLegs, launchpadCreateLink, stockLink } from "@/lib/links";
-import { isTradable, listStocks, readPortfolio, readStats, reverseBasename, type V1Stock } from "@/services/bstocks";
+import { automateLink, evenLegs, launchpadCreateLink, stockLink } from "@/lib/links";
+import { isTradable, listStocks, readActivity, readPortfolio, readStats, reverseBasename, type V1Stock } from "@/services/bstocks";
 import { listMarkets, listLaunchStocks, readToken, type Market } from "@/services/launchpad";
 import { askAssistant } from "@/services/assistant";
-import { KEYBOARD_ALIASES, actionButtons, decode, encode, menuCard, replyKeyboard, signButton, webAppOrUrl } from "./nav";
+import { KEYBOARD_ALIASES, actionButtons, decode, encode, menuCard, replyKeyboard, signButton } from "./nav";
 import { confirmEligibility, eligibilityCard, hasConfirmed } from "./eligibility";
 import { appendTurns, clearHistory, loadHistory } from "./history";
 import { THINKING, assistantCard, refusalCard } from "./assistant-card";
 import { forgetWallet, getWallet, setWallet, toAddress } from "./wallet";
-import { COPY } from "./copy";
+import { COPY, UI } from "./copy";
 import { CLAIM_HELP, KEY_WARNING, inspectForClaim } from "./claim";
-import { isAddress, resolveStock, splitTickers } from "./resolve";
+import { isAddress, resolveStock } from "./resolve";
+import { clearWatchlist, getPrompt, getWatchlist, setPrompt, updateWatchlist } from "./preferences";
+import { activityCard, watchlistCard } from "./personal-cards";
+import { planCard } from "./plan";
 import { marketListCard, marketsCard, portfolioCard, stockCard, tokenCard, type Card } from "./render";
 import { earnCard, helpCard, newsCard, poolsCard, statusCard, templatesCard } from "./ecosystem-cards";
 import { readEarn, readNews, readPools, readStatus, readTemplates } from "@/services/ecosystem";
+import registration from "@/lib/telegram/registration.json";
+
+const PERSONAL_COMMANDS = new Set(registration.personalCommands);
 
 export interface Ctx {
   surface: Surface;
@@ -69,9 +75,16 @@ async function handleMessage(surface: Surface, tg: Telegram, message: TgMessage)
   }
 
   const isPrivate = message.chat.type === "private";
+  if (message.from?.is_bot) return webhookAck();
+  const mention = /^\/[A-Za-z0-9_]+@([A-Za-z0-9_]+)/.exec(text.trim())?.[1];
+  if (mention) {
+    const expected = surface === "bstocks" ? env().TELEGRAM_BSTOCKS_USERNAME : env().TELEGRAM_LAUNCHPAD_USERNAME;
+    const username = expected ?? await tg.username();
+    if (!username || username.toLowerCase() !== mention.toLowerCase()) return webhookAck();
+  }
   // A persistent-keyboard button sends its own label as ordinary text, so the label table is read
   // before anything else treats the message as prose.
-  const parsed = parseCommand(text) ?? KEYBOARD_ALIASES[text.trim()] ?? null;
+  let parsed = parseCommand(text) ?? (isPrivate ? KEYBOARD_ALIASES[text.trim()] : undefined) ?? null;
 
   if (!parsed) {
     if (claim.kind === "claim-link" && surface === "bstocks") {
@@ -79,9 +92,16 @@ async function handleMessage(surface: Surface, tg: Telegram, message: TgMessage)
     }
     // Free text is only ever answered in a private chat. In a group the bot speaks when spoken to,
     // and it is never given a stranger's message as an instruction.
-    if (isPrivate && env().ASSISTANT_ENABLED) return assistantReply(tg, message);
-    return webhookAck();
+    if (!isPrivate) return webhookAck();
+    const pending = message.from ? await getPrompt(surface, message.from.id) : null;
+    if (pending) parsed = { command: pending, args: text.trim() };
+    else if (surface === "launchpad") parsed = { command: isAddress(text.trim()) ? "token" : "search", args: text.trim() };
+    else if (isAddress(text.trim()) || /^[a-z0-9-]+\.base\.eth$/i.test(text.trim())) parsed = { command: "portfolio", args: text.trim() };
+    else if (/^\$?[A-Za-z0-9.\-]{1,12}$/.test(text.trim()) || !env().ASSISTANT_ENABLED) parsed = { command: "search", args: text.trim() };
+    else return assistantReply(tg, message);
   }
+
+  if (isPrivate && message.from && (parseCommand(text) || KEYBOARD_ALIASES[text.trim()])) await setPrompt(surface, message.from.id, null);
 
   const identity = String(message.from?.id ?? message.chat.id);
   const verdict = await meter("cmd", identity, LIMITS.command);
@@ -139,7 +159,12 @@ export function parseStartPayload(raw: string): { command: string; args: string 
 }
 
 async function route(command: string, ctx: Ctx): Promise<Card | null> {
+  if (PERSONAL_COMMANDS.has(command) && !ctx.isPrivate) return { text: esc(UI.privateOnly), preview: { is_disabled: true } };
   const shared: Record<string, (c: Ctx) => Promise<Card> | Card> = {
+    cancel: async (c) => {
+      if (c.from && c.isPrivate) await setPrompt(c.surface, c.from.id, null);
+      return { ...menuCard(c.surface, c.isPrivate), editable: true };
+    },
     reset: async (c) => {
       await clearHistory(c.chat.id);
       return { text: esc("Forgotten. We can start again."), preview: { is_disabled: true } };
@@ -158,7 +183,8 @@ async function route(command: string, ctx: Ctx): Promise<Card | null> {
         const card = await route(deep.command, { ...c, args: deep.args });
         // The keyboard still comes with the first message, whatever that first message turned out
         // to be: it is the thing that makes the bot usable without typing.
-        if (card) return { ...card, replyKeyboard: c.isPrivate ? replyKeyboard(c.surface) : undefined };
+        // Reply and inline keyboards are mutually exclusive. Keep the deep-linked card actionable.
+        if (card) return card;
       }
       return {
         text: COPY[c.surface].start,
@@ -167,7 +193,7 @@ async function route(command: string, ctx: Ctx): Promise<Card | null> {
       };
     },
     menu: (c) => {
-      const card = menuCard(c.surface);
+      const card = menuCard(c.surface, c.isPrivate);
       return { text: card.text, keyboard: card.keyboard, preview: { is_disabled: true }, editable: true };
     },
     // The BStocks help is a card with buttons; the launchpad's stays prose until it has as many
@@ -181,7 +207,11 @@ async function route(command: string, ctx: Ctx): Promise<Card | null> {
     if (!ctx.isPrivate) return null;
     return ctx.surface === "bstocks" ? helpCard() : { text: COPY[ctx.surface].help, preview: { is_disabled: true } };
   }
-  return handler(ctx);
+  const card = await handler(ctx);
+  if (card.replyKeyboard || command === "start") return card;
+  const keyboard = [...(card.keyboard ?? [])];
+  if (command !== "menu" && command !== "cancel") keyboard.push([{ text: "🏠 Menu", callback_data: "n" }, { text: "❓ Help", callback_data: "h" }]);
+  return { ...card, keyboard, editable: true };
 }
 
 /* ------------------------------------------------------------------ *
@@ -190,18 +220,60 @@ async function route(command: string, ctx: Ctx): Promise<Card | null> {
 
 const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
   price: async (ctx) => {
-    if (!ctx.args) return { text: esc("Which stock? Try /price NVDA"), preview: { is_disabled: true } };
+    if (!ctx.args) return BSTOCKS_COMMANDS.markets!(ctx);
     const stocks = await listStocks();
     if (stocks.length === 0) return upstreamDown();
     const { stock, suggestions } = resolveStock(stocks, ctx.args);
     if (!stock) return notFound(ctx.args, suggestions);
-    return stockCard(stock);
+    const card = stockCard(stock);
+    if (ctx.isPrivate && ctx.from) {
+      const saved = (await getWatchlist(ctx.from.id)).includes(stock.address.toLowerCase());
+      card.keyboard?.splice(1, 0, [{ text: saved ? "★ Watching · Remove" : "☆ Watch", callback_data: encode({ kind: saved ? "unwatch" : "watch", symbol: stock.symbol }) }]);
+    }
+    return card;
   },
 
-  markets: async () => {
+  markets: async (ctx) => {
     const stocks = await listStocks();
     if (stocks.length === 0) return upstreamDown();
-    return marketsCard(stocks);
+    const parts = /^(move|volume|name) (\d{1,3})$/.exec(ctx.args);
+    return marketsCard(stocks, parts ? Number(parts[2]) : 0, parts ? parts[1] as "move" | "volume" | "name" : "move");
+  },
+
+  search: async (ctx) => {
+    if (!ctx.args) {
+      if (ctx.isPrivate && ctx.from) await setPrompt(ctx.surface, ctx.from.id, "search");
+      return { text: UI.searchPrompt, keyboard: [[{ text: "Cancel", callback_data: "cancel" }]] };
+    }
+    const stocks = await listStocks();
+    if (!stocks.length) return upstreamDown();
+    const result = resolveStock(stocks, ctx.args);
+    if (ctx.isPrivate && ctx.from) await setPrompt(ctx.surface, ctx.from.id, null);
+    if (result.stock) return BSTOCKS_COMMANDS.price!({ ...ctx, args: result.stock.symbol });
+    return notFound(ctx.args, result.suggestions);
+  },
+
+  watchlist: async (ctx) => {
+    if (!ctx.from) return upstreamDown();
+    const addresses = await getWatchlist(ctx.from.id);
+    if (!addresses.length) return watchlistCard([], []);
+    const stocks = await listStocks();
+    return stocks.length ? watchlistCard(stocks, addresses) : upstreamDown();
+  },
+  watch: (ctx) => changeWatch(ctx, true),
+  unwatch: (ctx) => changeWatch(ctx, false),
+  clearwatchlist: async (ctx) => {
+    if (ctx.from && !(await clearWatchlist(ctx.from.id))) return { text: esc(UI.storageUnavailable) };
+    return watchlistCard([], []);
+  },
+  settings: async () => ({ text: UI.settings, keyboard: [[{ text: "Wallet", callback_data: "wallet" }, { text: "Watchlist", callback_data: "watchlist" }]] }),
+  activity: async (ctx) => {
+    const typed = ctx.args ? await toAddress(ctx.args) : null;
+    if (ctx.args && !typed) return { text: esc(UI.invalidWallet) };
+    const address = typed?.address ?? (ctx.from ? await getWallet(ctx.from.id) : null);
+    if (!address) return BSTOCKS_COMMANDS.wallet!({ ...ctx, args: "" });
+    const items = await readActivity(address);
+    return items ? activityCard(items, address) : upstreamDown();
   },
 
   buy: (ctx) => stockHandoff(ctx, "buy"),
@@ -217,16 +289,14 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
    * link that quietly drops a leg is worse than one that was never sent.
    */
   dca: async (ctx) => {
+    if (!ctx.args) {
+      const stocks = await listStocks();
+      return stocks.length ? planCard(stocks.slice(0, 24)) : upstreamDown();
+    }
     const parsed = parseDca(ctx.args);
     if (!parsed) {
       return {
-        text: [
-          b("Build a recurring plan"),
-          "",
-          esc("Try /dca 25 NVDA weekly, or /dca 50 NVDA,TSLA,AAPL monthly."),
-          "",
-          esc("I only build the link. The plan itself is created and signed by you in the app, and you can pause, cancel or revoke it at any time."),
-        ].join("\n"),
+        text: esc(UI.planInvalid),
         preview: { is_disabled: true },
       };
     }
@@ -240,9 +310,12 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
       if (stock) resolved.push(stock);
       else missing.push(ticker);
     }
-    if (resolved.length === 0) return notFound(parsed.tickers.join(", "), []);
+    if (missing.length > 0) return { text: `${esc(UI.planMissing)}\n\n${esc(missing.join(", "))}` };
+    if (new Set(resolved.map((s) => s.address.toLowerCase())).size !== resolved.length) return { text: esc(UI.planDuplicates) };
 
-    const href = automateLink(evenLegs(resolved.map((s) => s.address)), {
+    const legs = evenLegs(resolved.map((s) => s.address));
+    if (legs.some((leg) => parsed.usd * leg.bps / 10_000 < 1)) return { text: esc(UI.planInvalid) };
+    const href = automateLink(legs, {
       usd: parsed.usd,
       cadenceDays: parsed.cadenceDays,
       name: resolved.length === 1 ? `${resolved[0]?.symbol} plan` : "Basket plan",
@@ -253,7 +326,6 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
       "",
       `${esc(`$${parsed.usd} ${parsed.cadenceLabel}, split evenly across`)} ${b(resolved.map((s) => s.symbol).join(", "))}`,
     ];
-    if (missing.length > 0) lines.push(`<i>${esc(`Not listed, left out: ${missing.join(", ")}`)}</i>`);
     lines.push(
       "",
       esc("The link opens the wizard already filled in. The contract enforces the amount, the cadence, the routes and the minimum you receive, and it can never sell."),
@@ -261,7 +333,7 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
 
     return {
       text: lines.join("\n"),
-      keyboard: [[{ text: "Open the plan wizard", url: href }]],
+      keyboard: [[signButton("Review plan in BaseStocks", "bstocks", new URL(href).pathname + new URL(href).search, "Recurring plan", ctx.isPrivate)]],
       preview: { url: href, prefer_small_media: true },
     };
   },
@@ -288,18 +360,15 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     if (!ctx.args) {
       const current = await getWallet(ctx.from.id);
       if (!current) {
+        await setPrompt(ctx.surface, ctx.from.id, "wallet");
         return {
-          text: [
-            b("Add a wallet"),
-            "",
-            esc("Send /wallet followed by your address or Basename, for example /wallet alice.base.eth"),
-            "",
-            esc("This is a bookmark, not a login. It lets me show you holdings that are already public on Base, it proves nothing, and it lets me do nothing on your behalf. /forget drops it."),
-          ].join("\n"),
+          text: UI.walletPrompt,
+          keyboard: [[{ text: "Cancel", callback_data: "cancel" }]],
           preview: { is_disabled: true },
         };
       }
       const name = await reverseBasename(current);
+      await setPrompt(ctx.surface, ctx.from.id, "wallet");
       return {
         text: [
           b("Your wallet"),
@@ -308,6 +377,7 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
           ...(name ? [esc(name)] : []),
           "",
           esc("/portfolio shows what is in it. /forget drops it."),
+          esc("Send a new address or Basename to replace it, or /cancel to keep it."),
         ].join("\n"),
         keyboard: [[{ text: "Portfolio", callback_data: encode({ kind: "portfolio" }) }]],
         preview: { is_disabled: true },
@@ -318,7 +388,8 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     if (!resolved) {
       return { text: esc("That is not an address or a Basename. Try /wallet 0x... or /wallet alice.base.eth"), preview: { is_disabled: true } };
     }
-    await setWallet(ctx.from.id, resolved.address);
+    if (!(await setWallet(ctx.from.id, resolved.address))) return { text: esc(UI.storageUnavailable) };
+    await setPrompt(ctx.surface, ctx.from.id, null);
     return {
       text: [
         b("Saved"),
@@ -336,7 +407,7 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
   me: (ctx) => BSTOCKS_COMMANDS.portfolio!(ctx),
 
   forget: async (ctx) => {
-    if (ctx.from) await forgetWallet(ctx.from.id);
+    if (ctx.from && !(await forgetWallet(ctx.from.id))) return { text: esc(UI.storageUnavailable) };
     return { text: esc("Dropped. I no longer have an address for you."), preview: { is_disabled: true } };
   },
 
@@ -346,16 +417,10 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
       return { text: esc("I never show anybody's holdings in a group. Message me directly."), preview: { is_disabled: true } };
     }
     const typed = ctx.args ? await toAddress(ctx.args) : null;
+    if (ctx.args && !typed) return { text: esc(UI.invalidWallet), preview: { is_disabled: true } };
     const address = typed?.address ?? (ctx.from ? await getWallet(ctx.from.id) : null);
     if (!address) {
-      return {
-        text: [
-          b("No wallet yet"),
-          "",
-          esc("Tell me which one with /wallet 0x... or /wallet alice.base.eth, and I will remember it."),
-        ].join("\n"),
-        preview: { is_disabled: true },
-      };
+      return BSTOCKS_COMMANDS.wallet!({ ...ctx, args: "" });
     }
 
     const [portfolio, name] = await Promise.all([readPortfolio(address), reverseBasename(address)]);
@@ -363,9 +428,10 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
 
     return portfolioCard(portfolio, name ?? shortAddress(address), [
       [
-        { ...webAppOrUrl(bstocksUrl("/portfolio"), ctx.isPrivate), text: "Open portfolio" },
+        signButton("Open portfolio", "bstocks", "/portfolio", "Your portfolio", ctx.isPrivate),
         { text: "Markets", callback_data: encode({ kind: "markets" }) },
       ],
+      [{ text: "Recent activity", callback_data: encode({ kind: "activity", address }) }, { text: "↻ Refresh", callback_data: encode({ kind: "portfolio", address }) }],
     ]);
   },
 
@@ -411,7 +477,7 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     return {
       text: lines.join("\n"),
       keyboard: [
-        [{ ...webAppOrUrl(bstocksUrl("/gifts"), ctx.isPrivate), text: "Open gifts" }],
+        [signButton("Open gifts", "bstocks", "/gifts", "Give stock", ctx.isPrivate)],
         [{ text: "Open pools", callback_data: encode({ kind: "pools" }) }],
       ],
       preview: { is_disabled: true },
@@ -452,6 +518,17 @@ function numberOr(value: number | undefined): string {
   return typeof value === "number" ? value.toLocaleString("en-US") : "—";
 }
 
+async function changeWatch(ctx: Ctx, add: boolean): Promise<Card> {
+  if (!ctx.from) return upstreamDown();
+  if (!ctx.args) return BSTOCKS_COMMANDS.watchlist!(ctx);
+  const stocks = await listStocks();
+  if (!stocks.length) return upstreamDown();
+  const { stock, suggestions } = resolveStock(stocks, ctx.args);
+  if (!stock) return notFound(ctx.args, suggestions);
+  if (!(await updateWatchlist(ctx.from.id, stock.address, add))) return { text: esc(UI.watchFull) };
+  return add ? BSTOCKS_COMMANDS.price!({ ...ctx, args: stock.symbol }) : watchlistCard(stocks, await getWatchlist(ctx.from.id));
+}
+
 export interface DcaRequest {
   usd: number;
   tickers: string[];
@@ -468,14 +545,16 @@ const CADENCE: Record<string, { days: number; label: string }> = {
 
 export function parseDca(args: string): DcaRequest | null {
   const parts = args.split(/\s+/).filter(Boolean);
-  if (parts.length < 2) return null;
+  if (parts.length < 3) return null;
+  if (!/^\$?\d+(?:\.\d{1,2})?$/.test(parts[0] ?? "")) return null;
   const usd = Number(parts[0]?.replace(/^\$/, ""));
   if (!Number.isFinite(usd) || usd <= 0 || usd > 1_000_000) return null;
   const last = parts[parts.length - 1]?.toLowerCase() ?? "";
   const cadence = CADENCE[last];
   if (!cadence) return null;
-  const tickers = splitTickers(parts.slice(1, -1).join(" "));
-  if (tickers.length === 0) return null;
+  const tickers = parts.slice(1, -1).join(" ").split(/[,\s]+/).map((ticker) => ticker.replace(/^\$/, ""));
+  if (tickers.length === 0 || tickers.length > 12 || tickers.some((ticker) => !/^[A-Za-z0-9.\-]{1,12}$/.test(ticker))) return null;
+  if (new Set(tickers.map((ticker) => ticker.toUpperCase())).size !== tickers.length || usd < tickers.length) return null;
   return { usd, tickers, cadenceDays: cadence.days, cadenceLabel: cadence.label };
 }
 
@@ -490,7 +569,7 @@ export function parseDca(args: string): DcaRequest | null {
 async function stockHandoff(ctx: Ctx, side: "buy" | "sell"): Promise<Card> {
   const verb = side === "buy" ? "Buy" : "Sell";
   if (!ctx.args) {
-    return { text: esc(`Which stock? Try /${side} NVDA`), preview: { is_disabled: true } };
+    return BSTOCKS_COMMANDS.markets!(ctx);
   }
   const stocks = await listStocks();
   if (stocks.length === 0) return upstreamDown();
@@ -610,7 +689,11 @@ const LAUNCHPAD_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
   },
 
   search: async (ctx) => {
-    if (!ctx.args) return { text: esc("Search for what? Try /search doge"), preview: { is_disabled: true } };
+    if (!ctx.args) {
+      if (ctx.isPrivate && ctx.from) await setPrompt(ctx.surface, ctx.from.id, "search");
+      return { text: UI.searchPrompt, keyboard: [[{ text: "Cancel", callback_data: "cancel" }]] };
+    }
+    if (ctx.isPrivate && ctx.from) await setPrompt(ctx.surface, ctx.from.id, null);
     const page = await listMarkets({ q: ctx.args.slice(0, 64), limit: 10, orderBy: "volume24h" });
     if (!page) return upstreamDown();
     if (page.markets.length === 1 && page.markets[0]) return tokenCard(page.markets[0], Date.now(), undefined, ctx.isPrivate);
@@ -748,6 +831,11 @@ async function findMarket(query: string): Promise<Market | "indexing" | null> {
 async function handleInline(surface: Surface, tg: Telegram, update: TgUpdate): Promise<Response> {
   const query = update.inline_query;
   if (!query) return webhookAck();
+  // An inline query can also contain a gift secret; never forward it as an upstream search.
+  if (inspectForClaim(query.query).kind === "key-present") {
+    await tg.answerInlineQuery(query.id, [], 0);
+    return webhookAck();
+  }
 
   const verdict = await meter("inline", String(query.from.id), LIMITS.command);
   if (!verdict.allowed) {
@@ -763,7 +851,7 @@ async function handleInline(surface: Surface, tg: Telegram, update: TgUpdate): P
 
 async function inlineStocks(raw: string): Promise<unknown[]> {
   const stocks = await listStocks();
-  const query = raw.trim().toUpperCase();
+  const query = raw.trim().replace(/^\$+/, "").toUpperCase();
   const matched = query
     ? stocks.filter((s) => s.symbol.toUpperCase().includes(query) || s.name.toUpperCase().includes(query))
     : stocks;
@@ -903,29 +991,49 @@ async function handleCallback(surface: Surface, tg: Telegram, update: TgUpdate):
   const query = update.callback_query;
   if (!query) return webhookAck();
 
-  await tg.answerCallback(query.id);
-
   let action = decode(query.data);
   const message = query.message;
-  if (!action || !message) return webhookAck();
+  if (!action || (!message && !query.inline_message_id) || (message && message.date === 0)) {
+    await tg.answerCallback(query.id, UI.callbackUnavailable);
+    return webhookAck();
+  }
+
+  const publicKinds = new Set(["markets", "price", "buy", "sell", "news", "help", "menu", "stats", "status", "earn", "baskets", "gift", "pools", "top", "new", "token", "confirm", "dca", "plan", "cancel"]);
+  if (!message && !publicKinds.has(action.kind)) {
+    await tg.answerCallback(query.id, UI.privateOnly);
+    return webhookAck();
+  }
+  const bstocksOnly = new Set(["price", "markets", "news", "stats", "status", "earn", "baskets", "gift", "pools", "dca", "plan", "watch", "unwatch", "watchlist", "portfolio", "wallet", "activity", "settings"]);
+  if ((surface === "launchpad" && bstocksOnly.has(action.kind)) || (surface === "bstocks" && ["top", "new", "token"].includes(action.kind))) {
+    await tg.answerCallback(query.id, UI.callbackUnavailable);
+    return webhookAck();
+  }
+
+  const verdict = await meter("cb", String(query.from.id), LIMITS.command);
+  if (!verdict.allowed) {
+    await tg.answerCallback(query.id, "Please wait a moment before trying again.");
+    return webhookAck();
+  }
+  await tg.answerCallback(query.id);
 
   if (action.kind === "confirm") {
     await confirmEligibility(query.from.id);
     action = action.next;
   }
 
-  const verdict = await meter("cb", String(query.from.id), LIMITS.command);
-  if (!verdict.allowed) return webhookAck();
-
   const ctx: Ctx = {
     surface,
     tg,
-    chat: message.chat,
+    // Inline messages may live in any chat; never infer that they are private from the clicker.
+    chat: message?.chat ?? { id: 0, type: "group" },
     from: query.from,
-    threadId: message.message_thread_id,
-    isPrivate: message.chat.type === "private",
-    args: "symbol" in action ? action.symbol : "address" in action ? action.address : "",
+    threadId: message?.message_thread_id,
+    isPrivate: message?.chat.type === "private",
+    args: "symbol" in action ? action.symbol ?? "" : "address" in action ? action.address ?? "" : "",
   };
+
+  if (ctx.isPrivate) await setPrompt(surface, query.from.id, null);
+  if (action.kind === "markets") ctx.args = `${action.sort ?? "move"} ${action.page ?? 0}`;
 
   const command =
     action.kind === "price"
@@ -938,23 +1046,31 @@ async function handleCallback(surface: Surface, tg: Telegram, update: TgUpdate):
             ? "token"
             : action.kind;
 
-  const card = await route(command, ctx);
+  let card: Card | null;
+  if (action.kind === "plan") {
+    const stocks = await listStocks();
+    const { stock } = resolveStock(stocks, action.symbol);
+    if (!stock) card = stocks.length ? notFound(action.symbol, []) : upstreamDown();
+    else if (action.amount && action.days) {
+      const cadence = Object.entries(CADENCE).find(([, value]) => value.days === action.days)?.[0];
+      card = cadence ? await route("dca", { ...ctx, args: `${action.amount} ${stock.symbol} ${cadence}` }) : null;
+    } else card = planCard(stocks, { ...action, symbol: stock.symbol });
+  } else card = await route(command, ctx);
   if (!card) return webhookAck();
+  if (!message) card = { ...card, text: `${card.text}\n\n<i>${esc(COPY[surface].footer)}</i>` };
 
   // Editing keeps one card on screen; a card that cannot be edited (a different shape, or a
   // message too old for Telegram to change) simply arrives as a new message instead.
-  if (card.editable) {
-    return Response.json({
-      method: "editMessageText",
-      chat_id: message.chat.id,
-      message_id: message.message_id,
+  if (card.editable || !message) {
+    const edited = await tg.editCard({
+      ...(message ? { chat_id: message.chat.id, message_id: message.message_id } : { inline_message_id: query.inline_message_id }),
       text: card.text,
-      parse_mode: "HTML",
       link_preview_options: card.preview ?? { is_disabled: true },
-      reply_markup: card.keyboard ? { inline_keyboard: card.keyboard } : undefined,
+      reply_markup: { inline_keyboard: card.keyboard ?? [] },
     });
+    if (edited) return webhookAck();
   }
-  return reply(message, card);
+  return message ? reply(message, card) : webhookAck();
 }
 
 /* ------------------------------------------------------------------ *
@@ -996,6 +1112,6 @@ function notFound(query: string, suggestions: V1Stock[]): Card {
   } else {
     lines.push("", esc("/markets lists everything I know about."));
   }
-  return { text: lines.join("\n"), preview: { is_disabled: true } };
+  return { text: lines.join("\n"), keyboard: suggestions.length ? [suggestions.map((stock) => ({ text: stock.symbol, callback_data: encode({ kind: "price", symbol: stock.symbol }) }))] : [[{ text: "Browse markets", callback_data: "m" }]], preview: { is_disabled: true } };
 }
 

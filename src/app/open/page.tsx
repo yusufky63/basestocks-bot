@@ -25,7 +25,8 @@ interface Props {
 }
 
 export default async function OpenPage({ searchParams }: Props) {
-  const { app: rawApp, to, label } = await searchParams;
+  const { app: rawApp, to, label: rawLabel } = await searchParams;
+  const label = rawLabel?.slice(0, 80);
   const app: App = rawApp === "launchpad" ? "launchpad" : "bstocks";
   const target = to ? destination(app, to) : null;
 
@@ -33,7 +34,8 @@ export default async function OpenPage({ searchParams }: Props) {
     <>
       <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
       <style>{THEME}</style>
-      <main style={{ maxWidth: 460, margin: "0 auto", padding: "28px 20px 40px" }}>
+      <main className="handoff" style={{ maxWidth: 460, margin: "0 auto", padding: "max(28px, env(safe-area-inset-top)) 20px max(40px, env(safe-area-inset-bottom))" }}>
+        <div aria-hidden="true" style={{ width: 40, height: 40, background: "var(--accent)", color: "var(--accent-ink)", display: "grid", placeItems: "center", borderRadius: 12, fontSize: 24, marginBottom: 24 }}>↗</div>
         <div
           style={{
             fontSize: 11,
@@ -42,24 +44,27 @@ export default async function OpenPage({ searchParams }: Props) {
             color: "var(--muted)",
           }}
         >
-          BaseStocks
+          {app === "bstocks" ? "BaseStocks" : "BaseStocks Launchpad"} · Continue in your wallet
         </div>
 
         {target ? (
           <>
             <h1 style={heading}>{label ? label : "Continue"}</h1>
             <p style={body}>
-              Pick where to open it. Your wallet lives in one of these apps, and a page has to run
-              where the wallet is: a browser inside a chat app has nothing to sign with.
+              Choose where to open BaseStocks. Review the details there, then confirm with your wallet when you are ready.
             </p>
             <OpenChoices target={target} label={label ?? ""} />
-            <p style={{ ...body, fontSize: 12, color: "var(--muted)", wordBreak: "break-all" }}>{target}</p>
+            <div style={{ borderTop: "1px solid var(--line)", paddingTop: 18, marginTop: 24 }}>
+              <p style={{ ...body, fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase" }}>Destination</p>
+              <p style={{ ...body, fontSize: 13, color: "var(--ink)", overflowWrap: "anywhere" }}>{new URL(target).host}</p>
+              <details style={{ color: "var(--muted)", fontSize: 12 }}><summary>View full link</summary><p style={{ overflowWrap: "anywhere" }}>{target}</p></details>
+            </div>
           </>
         ) : (
           <>
             <h1 style={heading}>Nothing to open</h1>
             <p style={body}>
-              That link has expired or was not built by the bot. Open{" "}
+              This link is not a supported BaseStocks destination. Return to the bot and choose an action, or open{" "}
               <a href={appOrigin(app)} style={{ color: "var(--accent)" }}>
                 {appOrigin(app).replace(/^https?:\/\//, "")}
               </a>{" "}
@@ -72,7 +77,7 @@ export default async function OpenPage({ searchParams }: Props) {
   );
 }
 
-const heading = { fontSize: 22, fontWeight: 600, margin: "6px 0 14px", color: "var(--ink)" } as const;
+const heading = { fontSize: 30, lineHeight: 1.2, letterSpacing: "-.035em", fontWeight: 650, margin: "12px 0 16px", color: "var(--ink)", overflowWrap: "anywhere" } as const;
 const body = { margin: "0 0 12px", fontSize: 14, lineHeight: 1.6, color: "var(--body)" } as const;
 
 /**
@@ -82,6 +87,8 @@ const body = { margin: "0 0 12px", fontSize: 14, lineHeight: 1.6, color: "var(--
  */
 const THEME = `
 :root {
+  color-scheme: light dark;
+  --page-bg: var(--tg-theme-bg-color, #fbfbfd);
   --ink: var(--tg-theme-text-color, #14171f);
   --body: var(--tg-theme-hint-color, #4a5160);
   --muted: var(--tg-theme-hint-color, #858c9c);
@@ -96,8 +103,14 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   margin: 0;
 }
+.handoff *, .handoff *::before, .handoff *::after { box-sizing: border-box; }
+.handoff a { text-decoration: none; }
+.handoff a:focus-visible, .handoff button:focus-visible, .handoff summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.handoff a:hover { filter: brightness(.96); }
+.handoff summary { cursor: pointer; padding: 8px 0; }
 @media (prefers-color-scheme: dark) {
   :root {
+    --page-bg: var(--tg-theme-bg-color, #0c0e13);
     --ink: var(--tg-theme-text-color, #e8ebf2);
     --body: var(--tg-theme-hint-color, #a8b0c0);
     --muted: var(--tg-theme-hint-color, #737b8b);

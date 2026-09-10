@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * The choices, rendered so they work in the two places this page is opened.
@@ -10,6 +10,7 @@ import { useEffect } from "react";
  * link is followed, not for what is offered, so only the handlers below know which one it is.
  */
 interface TelegramWebApp {
+  initData?: string;
   ready: () => void;
   expand: () => void;
   openLink: (url: string, options?: { try_instant_view?: boolean }) => void;
@@ -26,6 +27,7 @@ declare global {
 }
 
 export function OpenChoices({ target, label }: { target: string; label: string }) {
+  const [copyStatus, setCopyStatus] = useState("");
   useEffect(() => {
     // The only thing the effect does is tell an external system we are here. Telegram keeps the
     // loading shimmer up until `ready()`, so without this the container looks broken for a moment.
@@ -36,39 +38,37 @@ export function OpenChoices({ target, label }: { target: string; label: string }
   }, []);
 
   /**
-   * A custom scheme has to be a navigation, not `openLink`.
-   *
-   * Telegram's `openLink` is for http(s) and quietly does nothing with `cbwallet://`. Setting
-   * `location.href` hands the scheme to the operating system, which is what actually switches apps.
-   */
-  const openScheme = (url: string) => {
-    window.location.href = url;
-  };
-
-  /**
    * An http link, on the other hand, must go through `openLink` when Telegram is hosting: a plain
    * navigation would replace the Mini App with the page and strand the user with no way back.
    */
-  const openHttp = (url: string) => {
+  const openHttp = (event: React.MouseEvent<HTMLAnchorElement>, url: string) => {
     const tg = window.Telegram?.WebApp;
-    if (tg) tg.openLink(url);
-    else window.location.href = url;
+    // The SDK also creates WebApp in ordinary browsers. Only a launched Mini App has initData.
+    if (tg?.initData) {
+      event.preventDefault();
+      tg.openLink(url);
+    }
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "22px 0" }}>
-      <button type="button" onClick={() => openScheme(baseAppLink(target))} style={primary}>
+      <a href={baseAppLink(target)} style={primary}>
         Open in Base app
-        <span style={hint}>Wallet already connected. Recommended.</span>
-      </button>
-      <button type="button" onClick={() => openScheme(metaMaskLink(target))} style={secondary}>
+        <span style={hint}>Use the wallet in your Base app.</span>
+      </a>
+      <a href={metaMaskLink(target)} style={secondary}>
         Open in MetaMask
         <span style={hint}>Uses MetaMask&apos;s own browser.</span>
-      </button>
-      <button type="button" onClick={() => openHttp(target)} style={secondary}>
+      </a>
+      <a href={target} onClick={(event) => openHttp(event, target)} style={secondary}>
         Open in a browser
         <span style={hint}>For an extension wallet, or a passkey.</span>
-      </button>
+      </a>
+      <button type="button" onClick={async () => {
+        try { await navigator.clipboard.writeText(target); setCopyStatus("Link copied. Paste it in your wallet browser."); }
+        catch { setCopyStatus("Copy is unavailable. Open “View full link” below to copy the destination."); }
+      }} style={{ ...secondary, textAlign: "center", fontSize: 13 }}>Copy link</button>
+      <span role="status" style={{ fontSize: 12, color: "var(--body)", minHeight: 18 }}>{copyStatus}</span>
       <p style={{ margin: "4px 0 0", fontSize: 12, lineHeight: 1.6, color: "var(--muted)" }}>
         {label ? `${label}. ` : ""}Nothing is signed by opening a link: you review and confirm in your
         own wallet, and this service holds no keys and cannot sign anything.
@@ -90,8 +90,8 @@ const buttonBase = {
   display: "block",
   width: "100%",
   textAlign: "left",
-  padding: "13px 16px",
-  borderRadius: 10,
+  padding: "17px 18px",
+  borderRadius: 14,
   fontSize: 15,
   fontWeight: 500,
   fontFamily: "inherit",

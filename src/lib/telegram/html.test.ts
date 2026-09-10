@@ -20,6 +20,9 @@ describe("esc", () => {
 });
 
 describe("link", () => {
+  it("keeps a quoted feed URL inside its href attribute", () => {
+    expect(link("Story", 'https://x.test/?q=" onclick="bad')).toBe('<a href="https://x.test/?q=&quot; onclick=&quot;bad">Story</a>');
+  });
   it("renders http and https", () => {
     expect(link("Open", "https://basestocks.finance/markets")).toBe('<a href="https://basestocks.finance/markets">Open</a>');
   });

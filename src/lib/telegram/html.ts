@@ -24,7 +24,7 @@ export const code = (s: string): string => `<code>${esc(s)}</code>`;
 export function link(label: string, href: string): string {
   const safe = /^https?:\/\//i.test(href) ? href : "";
   if (!safe) return esc(label);
-  return `<a href="${esc(safe)}">${esc(label)}</a>`;
+  return `<a href="${esc(safe).replace(/"/g, "&quot;")}">${esc(label)}</a>`;
 }
 
 export const TELEGRAM_TEXT_LIMIT = 4_096;

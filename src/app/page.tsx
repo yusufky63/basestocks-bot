@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default function Page() {
   const surfaces = enabledSurfaces();
   return (
-    <main style={{ maxWidth: 640 }}>
+    <main style={{ maxWidth: 640, padding: "48px 24px", margin: "0 auto" }}>
       <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 16px" }}>BaseStocks Bot</h1>
       <p style={{ margin: "0 0 16px" }}>
         Telegram bots for <a href="https://basestocks.finance">basestocks.finance</a> and the{" "}

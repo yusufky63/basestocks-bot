@@ -49,7 +49,8 @@ export const inlineQuerySchema = z.object({
 export const callbackQuerySchema = z.object({
   id: z.string(),
   from: userSchema,
-  data: z.string().max(64).optional(),
+  data: z.string().max(64).refine((value) => Buffer.byteLength(value, "utf8") <= 64).optional(),
+  inline_message_id: z.string().optional(),
   message: messageSchema.optional(),
 });
 

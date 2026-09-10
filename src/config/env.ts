@@ -11,6 +11,8 @@ const serverSchema = z.object({
   TELEGRAM_BSTOCKS_SECRET: z.string().min(16).max(256).optional(),
   TELEGRAM_LAUNCHPAD_TOKEN: z.string().min(20).optional(),
   TELEGRAM_LAUNCHPAD_SECRET: z.string().min(16).max(256).optional(),
+  TELEGRAM_BSTOCKS_USERNAME: z.string().regex(/^[A-Za-z0-9_]{5,32}$/).optional(),
+  TELEGRAM_LAUNCHPAD_USERNAME: z.string().regex(/^[A-Za-z0-9_]{5,32}$/).optional(),
 
   /** Where health alerts and indexer-lag notices go. A private chat with the operator. */
   TELEGRAM_OPS_CHAT_ID: z.string().optional(),
@@ -50,7 +52,9 @@ let cached: ServerEnv | null = null;
 
 export function env(): ServerEnv {
   if (cached) return cached;
-  const parsed = serverSchema.safeParse(process.env);
+  // Empty optional entries in the example env file mean disabled, just like absent entries.
+  const values = Object.fromEntries(Object.entries(process.env).map(([key, value]) => [key, value === "" ? undefined : value]));
+  const parsed = serverSchema.safeParse(values);
   if (!parsed.success) {
     // A malformed value is a deployment mistake, not a runtime condition: say which key.
     const keys = parsed.error.issues.map((i) => i.path.join(".")).join(", ");

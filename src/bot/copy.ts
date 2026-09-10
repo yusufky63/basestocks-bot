@@ -20,6 +20,30 @@ export const ELIGIBILITY_NOTE =
 
 export const NOT_ADVICE_NOTE = "Public chain data, not investment advice. Prices and rates change.";
 
+export const UI = {
+  menu: "<b>BaseStocks · Your market desk</b>\n\nExplore stocks, keep your favorites close and check your portfolio. Tap a section below, or send a ticker such as <b>NVDA</b>.\n\nEvery transaction opens in your own wallet for review.",
+  launchpadMenu: "<b>BaseStocks Launchpad</b>\n\nDiscover community tokens, inspect a pool and check its current launch fee. Tap below or paste a token address.",
+  fallback: "Send a ticker such as NVDA, a company name, or choose a section below. /cancel leaves the current step.",
+  privateOnly: "Open a private chat with me to use your wallet, watchlist and settings.",
+  walletPrompt: "<b>Add a read-only wallet</b>\n\nSend an address or a Basename, for example <code>alice.base.eth</code>.\n\nThis saves a bookmark to public balances. It is not a login and authorizes nothing. /cancel leaves this step; /forget removes the bookmark.",
+  searchPrompt: "<b>Find something</b>\n\nSend a ticker, company name or token address. /cancel leaves this step.",
+  invalidWallet: "That wallet could not be resolved. Check the address or Basename and try again. Your saved wallet has not changed.",
+  storageUnavailable: "Saved data could not be updated just now. Please try again shortly.",
+  watchEmpty: "<b>Your watchlist</b>\n\nKeep the stocks you follow here. Open a stock and tap ☆ Watch, or send /watch NVDA. This list is private to your Telegram account.",
+  watchFull: "The watchlist could not be updated. It may be full (24 stocks), or storage may be temporarily unavailable. Remove a stock with /unwatch or try again shortly.",
+  settings: "<b>Your settings</b>\n\nWallet: /wallet to view or change your read-only bookmark; /forget to remove it.\nWatchlist: /watchlist to view; /clearwatchlist to clear.\nAssistant history: /reset to clear.\n\nWallet bookmarks and watchlists expire after 180 days. Input steps expire after 10 minutes. With no shared store, saved preferences may disappear on a restart.",
+  planStock: "<b>Build a recurring plan · 1/3</b>\n\nChoose a stock. For a custom basket, send /dca 50 NVDA,TSLA weekly.",
+  planAmount: "<b>Build a recurring plan · 2/3</b>\n\nChoose the USD amount per run. You can review it in BaseStocks before signing.",
+  planCadence: "<b>Build a recurring plan · 3/3</b>\n\nChoose how often the plan should run.",
+  planInvalid: "Use /dca 25 NVDA weekly or /dca 50 NVDA,TSLA monthly. Include 1–12 unique stocks and at least $1 per stock. Available schedules: daily, weekly, biweekly, monthly.",
+  planMissing: "Some stocks could not be resolved. No plan link was created; check every ticker and try again.",
+  planDuplicates: "Two entries resolve to the same stock. Use each stock once so the allocation stays clear.",
+  activityEmpty: "No activity was returned for this wallet yet.",
+  activityNote: "Public BaseStocks activity. Pending app records are not confirmed transactions.",
+  callbackUnavailable: "This button is unavailable here. Open the bot privately and use /menu.",
+  cancelled: "Step cancelled. Choose where to go next.",
+} as const;
+
 export const SEPARATE_PRODUCT_NOTE =
   "Community tokens paired against a tokenized stock. Separate product, separate risks.";
 

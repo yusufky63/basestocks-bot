@@ -3,7 +3,9 @@ import { ago, compactUsd, pad, padStart, pct } from "@/lib/format";
 import { bstocksUrl } from "@/lib/links";
 import type { Card } from "./render";
 import type { EarnView, Headline, PoolEntry, StatusReport, Template } from "@/services/ecosystem";
-import { encode } from "./nav";
+import { encode, signButton } from "./nav";
+import { ELIGIBILITY_NOTE } from "./copy";
+import { env } from "@/config/env";
 
 /**
  * The rest of the app, rendered for a chat.
@@ -48,7 +50,7 @@ export function earnCard(view: EarnView): Card {
 
   return {
     text: lines.join("\n"),
-    keyboard: [[{ text: "Open Earn", url: bstocksUrl("/earn") }]],
+    keyboard: [[signButton("Open Earn in your wallet", "bstocks", "/earn", "Explore Earn")]],
     preview: { is_disabled: true },
     editable: true,
   };
@@ -105,7 +107,7 @@ export function statusCard(report: StatusReport): Card {
   } else {
     lines.push(
       "",
-      `<pre>${[...groups.entries()].map(([group, checks]) => `${pad(group, 18)}${checks.length} ok`).join("\n")}</pre>`,
+      `<pre>${[...groups.entries()].map(([group, checks]) => `${esc(pad(group, 18))}${checks.length} ok`).join("\n")}</pre>`,
     );
   }
 
@@ -136,8 +138,8 @@ export function templatesCard(templates: Template[], symbolOf: (address: string)
   return {
     text: lines.join("\n"),
     keyboard: [
-      ...templates.slice(0, 4).map((t) => [{ text: t.name, url: bstocksUrl(`/build/${t.slug}`) }]),
-      [{ text: "Build your own", url: bstocksUrl("/build") }],
+      ...templates.slice(0, 4).filter((t) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(t.slug)).map((t) => [signButton(t.name.slice(0, 40), "bstocks", `/build/${t.slug}`, "Build a basket")]),
+      [signButton("Build your own", "bstocks", "/build", "Build a basket")],
     ],
     preview: { is_disabled: true },
     editable: true,
@@ -149,11 +151,11 @@ export function templatesCard(templates: Template[], symbolOf: (address: string)
  * ------------------------------------------------------------------ */
 
 export function poolsCard(pools: PoolEntry[], symbolOf: (address: string) => string | null): Card {
-  const open = pools.filter((p) => !p.pool.closedAt).slice(0, 6);
+  const open = pools.filter((p) => !p.pool.closedAt && (!p.pool.expiresAt || Date.parse(p.pool.expiresAt) > Date.now()) && (p.remaining ?? (p.pool.slots - (p.claimed ?? 0))) > 0).slice(0, 6);
   if (open.length === 0) {
     return {
       text: [b("Gift pools"), "", esc("No open pool right now."), "", i0("A pool is one deposit many people claim an equal share of.")].join("\n"),
-      keyboard: [[{ text: "Create one", url: bstocksUrl("/gifts") }]],
+      keyboard: [[signButton("Create one", "bstocks", "/gifts", "Create a gift pool")]],
       preview: { is_disabled: true },
     };
   }
@@ -169,8 +171,8 @@ export function poolsCard(pools: PoolEntry[], symbolOf: (address: string) => str
   return {
     text: lines.join("\n"),
     keyboard: [
-      ...open.slice(0, 4).map((entry) => [
-        { text: entry.pool.legs.map((l) => symbolOf(l.token) ?? "?").join(" + "), url: bstocksUrl(`/pools/${entry.pool.id}`) },
+      ...open.slice(0, 4).filter((entry) => /^[A-Za-z0-9_-]{1,80}$/.test(entry.pool.id)).map((entry) => [
+        signButton(entry.pool.legs.map((l) => symbolOf(l.token) ?? "?").join(" + "), "bstocks", `/pools/${entry.pool.id}`, "Open a gift pool"),
       ]),
       [{ text: "All pools", url: bstocksUrl("/pools") }],
     ],
@@ -200,13 +202,17 @@ export function helpCard(): Card {
       "",
       section("Prices", [
         ["/price NVDA", "price, Chainlink reference, liquidity, status"],
-        ["/markets", "all thirteen by 24h move"],
+        ["/markets", "listed stocks, with sorting and pages"],
+        ["/search NVIDIA", "find a stock by name or ticker"],
         ["/news NVDA", "headlines for one stock, or the ecosystem"],
       ]),
       "",
       section("Yours", [
         ["/wallet alice.base.eth", "tell me which wallet is yours"],
         ["/portfolio", "holdings, value, USDC, Earn, liquidity"],
+        ["/activity", "recent public wallet activity"],
+        ["/watch NVDA", "add a stock to your private watchlist"],
+        ["/watchlist", "saved stocks and current prices"],
       ]),
       "",
       section("Acting", [
@@ -221,11 +227,15 @@ export function helpCard(): Card {
         ["/stats", "verified activity"],
         ["/status", "what is up and what is not"],
         ["/reset", "forget our conversation"],
+        ["/settings", "manage saved data"],
+        ["/cancel", "leave an input step"],
       ]),
       "",
-      i0("Or just say what you want in your own words. I answer from live data and prepare drafts you sign yourself."),
+      i0(env().ASSISTANT_ENABLED ? "Or ask in your own words. Assistant drafts are reviewed and signed in your own wallet." : "Send a ticker or company name, or use /menu for buttons. AI conversation is not enabled on this deployment."),
       "",
       i0("I never message first, never ask for a key or seed phrase, and cannot sign, approve or move anything."),
+      "",
+      i0(ELIGIBILITY_NOTE),
     ].join("\n"),
     keyboard: [
       [

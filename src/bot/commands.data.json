@@ -1,5 +1,6 @@
 {
   "bstocks": [
+    { "command": "start", "description": "Welcome and quick keyboard" },
     {
       "command": "menu",
       "description": "Buttons instead of commands"
@@ -16,6 +17,14 @@
       "command": "portfolio",
       "description": "Your holdings, value and today's move"
     },
+    { "command": "search", "description": "Find a stock by ticker or company name" },
+    { "command": "watchlist", "description": "Your saved stocks and current prices" },
+    { "command": "watch", "description": "Add a stock: /watch NVDA" },
+    { "command": "unwatch", "description": "Remove a stock: /unwatch NVDA" },
+    { "command": "activity", "description": "Recent activity for your saved wallet" },
+    { "command": "settings", "description": "Manage your saved data" },
+    { "command": "clearwatchlist", "description": "Clear your saved stocks" },
+    { "command": "cancel", "description": "Leave the current input step" },
     {
       "command": "wallet",
       "description": "Tell me which wallet is yours"
@@ -74,6 +83,8 @@
     }
   ],
   "launchpad": [
+    { "command": "start", "description": "Welcome and quick keyboard" },
+    { "command": "cancel", "description": "Leave the current input step" },
     {
       "command": "menu",
       "description": "Buttons instead of commands"

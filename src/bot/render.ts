@@ -5,7 +5,7 @@ import { stockLink, launchpadTokenLink, launchpadMarketsLink } from "@/lib/links
 import type { Portfolio, V1Stock } from "@/services/bstocks";
 import { isTradable } from "@/services/bstocks";
 import { BASE_FEE_BPS, feeBpsAt, secondsUntilFairFee, type Market } from "@/services/launchpad";
-import { launchpadListButtons, marketButtons, signButton, stockButtons } from "./nav";
+import { encode, launchpadListButtons, marketButtons, signButton, stockButtons } from "./nav";
 
 /** A rendered reply: the text plus whatever buttons and preview belong with it. */
 export interface Card {
@@ -79,6 +79,8 @@ export function stockCard(stock: V1Stock): Card {
   if (!isTradable(stock)) {
     lines.push(i0(stock.status.detail));
   }
+  if (stock.dexUpdatedAt) lines.push(i0(`DEX updated ${ago(stock.dexUpdatedAt)}.`));
+  if (stock.reference?.updatedAt) lines.push(i0(`Reference updated ${ago(stock.reference.updatedAt)}.`));
 
   return {
     text: lines.join("\n"),
@@ -93,9 +95,12 @@ function i0(text: string): string {
 }
 
 /** Every listed stock, biggest mover first, in a monospace block so the columns line up. */
-export function marketsCard(stocks: V1Stock[]): Card {
-  const sorted = [...stocks].sort((x, y) => (y.dexChange24hPct ?? -Infinity) - (x.dexChange24hPct ?? -Infinity));
-  const body = sorted
+export function marketsCard(stocks: V1Stock[], page = 0, sort: "move" | "volume" | "name" = "move"): Card {
+  const sorted = [...stocks].sort((x, y) => sort === "name" ? x.symbol.localeCompare(y.symbol) : sort === "volume" ? (y.volume24hUsd ?? -Infinity) - (x.volume24hUsd ?? -Infinity) : (y.dexChange24hPct ?? -Infinity) - (x.dexChange24hPct ?? -Infinity));
+  const pages = Math.max(1, Math.ceil(sorted.length / 9));
+  const current = Math.max(0, Math.min(pages - 1, page));
+  const visible = sorted.slice(current * 9, current * 9 + 9);
+  const body = visible
     .map((s) => {
       const price = padStart(usd(s.dexPriceUsd ?? s.displayUsd), 10);
       const change = padStart(s.dexChange24hPct === null ? "—" : pct(s.dexChange24hPct, 1), 8);
@@ -108,12 +113,21 @@ export function marketsCard(stocks: V1Stock[]): Card {
   return {
     text: [
       b("Listed stocks"),
+      esc(`${stocks.length} stocks · ${sort === "move" ? "24h move" : sort === "volume" ? "24h volume" : "A–Z"} · Page ${current + 1}/${pages}`),
       `<pre>${esc(`${pad("", 6)}${padStart("price", 10)}${padStart("24h", 8)}${padStart("liq", 8)}`)}\n${esc(body)}</pre>`,
       i0("Liquidity is beside each row because a thin pool moves on a small order."),
     ].join("\n"),
     // Tapping a ticker is the whole reason this table is worth sending: reading a row and pricing
     // it should not be two different acts of remembering.
-    keyboard: marketButtons(sorted.map((s) => s.symbol)),
+    keyboard: [
+      ...marketButtons(visible.map((s) => s.symbol)),
+      [
+        ...((current > 0) ? [{ text: "‹ Previous", callback_data: encode({ kind: "markets", page: current - 1, sort }) }] : []),
+        { text: "↻ Refresh", callback_data: encode({ kind: "markets", page: current, sort }) },
+        ...((current + 1 < pages) ? [{ text: "Next ›", callback_data: encode({ kind: "markets", page: current + 1, sort }) }] : []),
+      ],
+      (["move", "volume", "name"] as const).map((order) => ({ text: `${order === sort ? "✓ " : ""}${order === "move" ? "24h move" : order === "volume" ? "Volume" : "A–Z"}`, callback_data: encode({ kind: "markets", sort: order, page: 0 }) })),
+    ],
     preview: { is_disabled: true },
     editable: true,
   };
@@ -200,6 +214,7 @@ export function tokenCard(
         { text: "Share", switch_inline_query_chosen_chat: { query: market.symbol, allow_user_chats: true, allow_group_chats: true } },
       ],
       [{ text: `More paired with ${market.stock.ticker}`, url: launchpadMarketsLink(market.stock.address) }],
+      [{ text: "↻ Refresh fee & price", callback_data: encode({ kind: "token", address: market.token }) }, { text: "← Top tokens", callback_data: "lt" }],
     ],
     preview: { url: href, prefer_small_media: true },
   };
@@ -254,7 +269,7 @@ export function portfolioCard(
   label: string,
   buttons: InlineKeyboardButton[][],
 ): Card {
-  const holdings = [...portfolio.holdings].sort((a, b) => b.valueUsd - a.valueUsd);
+  const holdings = [...portfolio.holdings].sort((a, b) => b.valueUsd - a.valueUsd).slice(0, 24);
 
   const lines = [
     b(label),
@@ -289,6 +304,7 @@ export function portfolioCard(
   // Shares, not tokens: one token is not one share once a split or a dividend has moved the
   // multiplier, and the API returns the scaled figure so nothing here has to guess.
   lines.push(i0("Share-equivalents, already scaled by each stock's multiplier."));
+  if (portfolio.holdings.length > holdings.length) lines.push(i0(`Showing ${holdings.length} of ${portfolio.holdings.length} holdings. Open the app to see all of them.`));
 
   return { text: lines.join("\n"), keyboard: buttons, preview: { is_disabled: true }, editable: true };
 }

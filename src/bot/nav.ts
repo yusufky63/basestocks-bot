@@ -3,6 +3,7 @@ import type { InlineKeyboardButton, ReplyKeyboard } from "@/lib/telegram/api";
 import { bstocksUrl, launchpadUrl, stockLink } from "@/lib/links";
 import { handoffUrl, type App } from "@/lib/handoff";
 import type { AssistantAction } from "@/services/assistant";
+import { UI } from "./copy";
 
 /**
  * Navigation without typing.
@@ -27,11 +28,16 @@ import type { AssistantAction } from "@/services/assistant";
  * this is attacker-supplied text like anything else that arrives from a chat.
  */
 export type Action =
-  | { kind: "markets" }
+  | { kind: "markets"; page?: number; sort?: "move" | "volume" | "name" }
+  | { kind: "news"; symbol?: string }
+  | { kind: "earn" | "baskets" | "gift" | "status" | "wallet" | "watchlist" | "settings" | "cancel" | "search" | "dca" }
+  | { kind: "activity"; address?: string }
+  | { kind: "watch" | "unwatch"; symbol: string }
+  | { kind: "plan"; symbol: string; amount?: number; days?: number }
   | { kind: "help" }
   | { kind: "stats" }
   | { kind: "menu" }
-  | { kind: "portfolio" }
+  | { kind: "portfolio"; address?: string }
   | { kind: "pools" }
   | { kind: "price"; symbol: string }
   | { kind: "buy"; symbol: string }
@@ -48,7 +54,14 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 export function encode(action: Action): string {
   switch (action.kind) {
     case "markets":
-      return "m";
+      return action.page !== undefined || action.sort !== undefined ? `m:${action.sort ?? "move"}:${action.page ?? 0}` : "m";
+    case "news": return action.symbol ? `nw:${action.symbol}` : "news";
+    case "earn": case "baskets": case "gift": case "status": case "wallet": case "watchlist":
+    case "settings": case "cancel": case "search": case "dca": return action.kind;
+    case "activity": return action.address ? `ac:${action.address}` : "activity";
+    case "watch": return `wa:${action.symbol}`;
+    case "unwatch": return `wr:${action.symbol}`;
+    case "plan": return `d:${action.symbol}${action.amount !== undefined ? `:${action.amount}` : ""}${action.days !== undefined ? `:${action.days}` : ""}`;
     case "help":
       return "h";
     case "stats":
@@ -56,7 +69,7 @@ export function encode(action: Action): string {
     case "menu":
       return "n";
     case "portfolio":
-      return "pf";
+      return action.address ? `pf:${action.address}` : "pf";
     case "pools":
       return "pl";
     case "top":
@@ -77,7 +90,16 @@ export function encode(action: Action): string {
 }
 
 export function decode(data: string | undefined): Action | null {
-  if (!data) return null;
+  if (!data || data.length > 64) return null;
+  if (/^c:c:/.test(data)) return null;
+  if (data === "news") return { kind: "news" };
+  const simple = ["earn", "baskets", "gift", "status", "wallet", "watchlist", "activity", "settings", "cancel", "search", "dca"] as const;
+  for (const kind of simple) if (data === kind) return { kind };
+  const market = /^m:(move|volume|name):(\d{1,3})$/.exec(data);
+  if (market) return { kind: "markets", sort: market[1] as "move" | "volume" | "name", page: Number(market[2]) };
+  const plan = /^d:([A-Za-z0-9.\-]{1,12})(?::(10|25|50|100))?(?::(1|7|14|30))?$/.exec(data);
+  if (plan?.[3] && !plan[2]) return null;
+  if (plan) return { kind: "plan", symbol: plan[1]!, ...(plan[2] ? { amount: Number(plan[2]) } : {}), ...(plan[3] ? { days: Number(plan[3]) } : {}) };
   if (data === "m") return { kind: "markets" };
   if (data === "h") return { kind: "help" };
   if (data === "st") return { kind: "stats" };
@@ -103,7 +125,11 @@ export function decode(data: string | undefined): Action | null {
     return { kind: "confirm", next };
   }
   if (verb === "t") return ADDRESS.test(argument) ? { kind: "token", address: argument } : null;
+  if (verb === "pf" || verb === "ac") return ADDRESS.test(argument) ? { kind: verb === "pf" ? "portfolio" : "activity", address: argument } : null;
   if (!SYMBOL.test(argument)) return null;
+  if (verb === "nw") return { kind: "news", symbol: argument };
+  if (verb === "wa") return { kind: "watch", symbol: argument };
+  if (verb === "wr") return { kind: "unwatch", symbol: argument };
   if (verb === "p") return { kind: "price", symbol: argument };
   if (verb === "b") return { kind: "buy", symbol: argument };
   if (verb === "s") return { kind: "sell", symbol: argument };
@@ -120,6 +146,10 @@ export function decode(data: string | undefined): Action | null {
  * button from becoming a message the bot stares at blankly.
  */
 export const KEYBOARD_ALIASES: Record<string, { command: string; args: string }> = {
+  "🏠 Menu": { command: "menu", args: "" },
+  "⭐ Watchlist": { command: "watchlist", args: "" },
+  "📰 News": { command: "news", args: "" },
+  "🔎 Search": { command: "search", args: "" },
   "📈 Markets": { command: "markets", args: "" },
   "📊 Stats": { command: "stats", args: "" },
   "💼 Portfolio": { command: "portfolio", args: "" },
@@ -131,14 +161,14 @@ export const KEYBOARD_ALIASES: Record<string, { command: string; args: string }>
 export function replyKeyboard(surface: Surface): ReplyKeyboard {
   const rows =
     surface === "bstocks"
-      ? [[{ text: "📈 Markets" }, { text: "💼 Portfolio" }], [{ text: "📊 Stats" }, { text: "❓ Help" }]]
-      : [[{ text: "🔥 Top" }, { text: "🆕 New" }], [{ text: "❓ Help" }]];
+      ? [[{ text: "📈 Markets" }, { text: "⭐ Watchlist" }], [{ text: "💼 Portfolio" }, { text: "📰 News" }], [{ text: "🏠 Menu" }, { text: "❓ Help" }]]
+      : [[{ text: "🔥 Top" }, { text: "🆕 New" }], [{ text: "🔎 Search" }, { text: "🏠 Menu" }]];
   return {
     keyboard: rows,
     resize_keyboard: true,
     is_persistent: true,
     input_field_placeholder:
-      surface === "bstocks" ? "Ask me anything, or tap a button" : "Paste a token address, or tap a button",
+      surface === "bstocks" ? "Ticker, company name, or tap a button" : "Paste a token address, or tap a button",
   };
 }
 
@@ -185,7 +215,7 @@ export function signButton(
   const url = handoffUrl(app, path, label);
   // In a private chat it opens as a Mini App, keeping Telegram's header, close button and theme
   // rather than reading as being dumped into a browser.
-  return isPrivate ? { text, web_app: { url } } : { text, url };
+  return isPrivate ? { text, style: "primary", web_app: { url } } : { text, style: "primary", url };
 }
 
 /** Under a price card: the two things somebody reading a price wants next. */
@@ -193,8 +223,8 @@ export function stockButtons(symbol: string, address: string, tradable: boolean)
   const rows: InlineKeyboardButton[][] = [];
   if (tradable) {
     rows.push([
-      { text: `Buy ${symbol}`, callback_data: encode({ kind: "buy", symbol }) },
-      { text: `Sell ${symbol}`, callback_data: encode({ kind: "sell", symbol }) },
+      { text: `Buy ${symbol}`, style: "success", callback_data: encode({ kind: "buy", symbol }) },
+      { text: `Sell ${symbol}`, style: "danger", callback_data: encode({ kind: "sell", symbol }) },
     ]);
   }
   rows.push([
@@ -205,6 +235,11 @@ export function stockButtons(symbol: string, address: string, tradable: boolean)
     },
   ]);
   rows.push([{ text: "← All markets", callback_data: encode({ kind: "markets" }) }]);
+  rows.splice(rows.length - 1, 0, [
+    { text: "↻ Refresh", callback_data: encode({ kind: "price", symbol }) },
+    { text: "📰 News", callback_data: encode({ kind: "news", symbol }) },
+    { text: "Recurring plan", callback_data: encode({ kind: "plan", symbol }) },
+  ]);
   return rows;
 }
 
@@ -268,44 +303,42 @@ export function actionButtons(actions: AssistantAction[], isPrivate = false): In
       rows.push(action.items.slice(0, 2).map((item) => ({ text: item.source.slice(0, 20), url: item.url })));
       continue;
     }
-    if (action.kind === "basket") rows.push([{ text: "Open the basket builder", url: bstocksUrl("/build") }]);
-    if (action.kind === "autoinvest") rows.push([{ text: "Open the plan wizard", url: bstocksUrl("/automate") }]);
-    if (action.kind === "gift") rows.push([{ text: "Open gifts", url: bstocksUrl("/gifts") }]);
-    if (action.kind === "earn") rows.push([{ text: "Open Earn", url: bstocksUrl("/earn") }]);
+    if (action.kind === "basket") rows.push([signButton("Open the basket builder", "bstocks", "/build", "Build a basket", isPrivate)]);
+    if (action.kind === "autoinvest") rows.push([signButton("Open the plan wizard", "bstocks", "/automate", "Recurring plan", isPrivate)]);
+    if (action.kind === "gift") rows.push([signButton("Open gifts", "bstocks", "/gifts", "Give stock", isPrivate)]);
+    if (action.kind === "earn") rows.push([signButton("Open Earn", "bstocks", "/earn", "Explore Earn", isPrivate)]);
   }
   return rows.slice(0, 4);
 }
 
 /** The one card that exists to be tapped rather than read. */
-export function menuCard(surface: Surface): { text: string; keyboard: InlineKeyboardButton[][] } {
+export function menuCard(surface: Surface, isPrivate = true): { text: string; keyboard: InlineKeyboardButton[][] } {
   if (surface === "launchpad") {
     return {
-      text: [
-        "<b>What would you like to see?</b>",
-        "",
-        "Or paste a token address and I will price it.",
-      ].join("\n"),
+      text: UI.launchpadMenu,
       keyboard: [
         [
           { text: "🔥 Top by volume", callback_data: encode({ kind: "top" }) },
           { text: "🆕 Newest", callback_data: encode({ kind: "new" }) },
         ],
         [{ text: "Open the launchpad", url: launchpadUrl("/markets") }],
+        [{ text: "🔎 Search", callback_data: "search" }, { text: "❓ Help", callback_data: "h" }],
       ],
     };
   }
   return {
-    text: [
-      "<b>What would you like to do?</b>",
-      "",
-      "Or just tell me in your own words: <i>what moved today, buy fifty dollars of NVDA, invest weekly in tech</i>.",
-    ].join("\n"),
+    text: UI.menu,
     keyboard: [
       [
         { text: "📈 Markets", callback_data: encode({ kind: "markets" }) },
-        { text: "📊 Stats", callback_data: encode({ kind: "stats" }) },
+        { text: "📰 News", callback_data: "news" },
       ],
-      [{ text: "Open the app", url: bstocksUrl("/markets") }],
+      ...(isPrivate ? [[{ text: "⭐ Watchlist", callback_data: "watchlist" }, { text: "💼 Portfolio", callback_data: "pf" }]] : []),
+      [{ text: "🔁 Recurring plan", callback_data: "dca" }, { text: "🧺 Baskets", callback_data: "baskets" }],
+      [{ text: "💵 Earn", callback_data: "earn" }, { text: "🎁 Gifts & pools", callback_data: "gift" }],
+      [{ text: "📊 Stats", callback_data: "st" }, { text: "Service status", callback_data: "status" }],
+      ...(isPrivate ? [[{ text: "⚙️ Settings", callback_data: "settings" }, { text: "❓ Help", callback_data: "h" }]] : []),
+      [{ text: "Open BaseStocks", style: "primary", url: bstocksUrl("/markets") }],
     ],
   };
 }

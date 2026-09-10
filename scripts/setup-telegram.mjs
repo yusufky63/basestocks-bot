@@ -30,7 +30,8 @@ const SURFACES = {
  * copy here kept registering the old set after `callback_query` was added: every button would have
  * done nothing, silently.
  */
-const ALLOWED_UPDATES = JSON.parse(readFileSync(resolve(ROOT, "src/lib/telegram/registration.json"), "utf8")).allowedUpdates;
+const registration = JSON.parse(readFileSync(resolve(ROOT, "src/lib/telegram/registration.json"), "utf8"));
+const ALLOWED_UPDATES = registration.allowedUpdates;
 
 function loadEnv() {
   const env = { ...process.env };
@@ -69,16 +70,31 @@ async function call(token, method, params) {
   return body.result;
 }
 
-async function register(surface, { drop }) {
+async function register(surface, { drop, dryRun }) {
   const env = loadEnv();
   const keys = SURFACES[surface];
   const token = env[keys.token];
   const secret = env[keys.secret];
-  const appUrl = env.APP_URL ?? env.NEXT_PUBLIC_APP_URL;
+  const appUrl = env.BOT_URL || env.APP_URL || env.NEXT_PUBLIC_APP_URL || (dryRun ? "https://bot.basestocks.finance" : undefined);
+  if (env.APP_URL && env.BOT_URL && new URL(env.APP_URL).origin !== new URL(env.BOT_URL).origin) {
+    throw new Error("APP_URL and BOT_URL must use the same origin so wallet links reach this bot deployment.");
+  }
+
+  const table = JSON.parse(readFileSync(resolve(ROOT, "src/bot/commands.data.json"), "utf8"));
+  const commands = table[surface];
+  const personal = new Set(registration.personalCommands);
+  const groupCommands = commands.filter((c) => !personal.has(c.command));
+  const profile = registration.profiles[surface];
+  if (commands.length > 100 || new Set(commands.map((c) => c.command)).size !== commands.length || commands.some((c) => !/^[a-z0-9_]{1,32}$/.test(c.command) || c.description.length < 1 || c.description.length > 256)) throw new Error("Invalid Telegram command menu.");
+  if (profile.name.length > 64 || profile.short_description.length > 120 || profile.description.length > 512) throw new Error("Bot profile exceeds a Telegram length limit.");
+  if (dryRun) {
+    console.log(JSON.stringify({ surface, webhook: new URL(`/api/telegram/${surface}/webhook`, appUrl).toString(), allowedUpdates: ALLOWED_UPDATES, profile, commands, groupCommands, menuButton: { type: "commands" }, dropsPendingUpdates: Boolean(drop) }, null, 2));
+    return;
+  }
 
   if (!token) throw new Error(`${keys.token} is not set.`);
   if (!secret) throw new Error(`${keys.secret} is not set. Run: node scripts/setup-telegram.mjs secret`);
-  if (!/^[A-Za-z0-9_-]{1,256}$/.test(secret)) {
+  if (!/^[A-Za-z0-9_-]{16,256}$/.test(secret)) {
     throw new Error(`${keys.secret} has characters Telegram will not accept. Only A-Z a-z 0-9 _ - are allowed.`);
   }
   if (!appUrl) throw new Error("APP_URL is not set (for example https://bot.basestocks.finance).");
@@ -97,17 +113,13 @@ async function register(surface, { drop }) {
     max_connections: 40,
   });
 
-  const table = JSON.parse(readFileSync(resolve(ROOT, "src/bot/commands.data.json"), "utf8"));
-  const commands = table[surface];
 
   /**
    * Groups see a shorter list, because two commands here answer with somebody's own holdings and a
    * menu entry that cannot work in the chat it is shown in is worse than no entry. The router
    * refuses them there as well: a scope hides an entry, it does not refuse the command.
    */
-  const personal = new Set(["portfolio", "wallet", "forget"]);
-  const groupCommands = commands.filter((c) => !personal.has(c.command));
-
+  await call(token, "setMyCommands", { commands: groupCommands, scope: { type: "default" } });
   await call(token, "setMyCommands", { commands, scope: { type: "all_private_chats" } });
   await call(token, "setMyCommands", { commands: groupCommands, scope: { type: "all_group_chats" } });
 
@@ -123,6 +135,9 @@ async function register(surface, { drop }) {
   // The button beside the message box. `commands` is the default, but setting it explicitly means a
   // leftover web_app button from an experiment cannot survive a redeploy.
   await call(token, "setChatMenuButton", { menu_button: { type: "commands" } });
+  await call(token, "setMyName", { name: profile.name });
+  await call(token, "setMyDescription", { description: profile.description });
+  await call(token, "setMyShortDescription", { short_description: profile.short_description });
 
   const info = await call(token, "getWebhookInfo");
   console.log(`@${me.username} (${surface})`);
@@ -154,6 +169,7 @@ async function remove(surface) {
 async function main() {
   const [command, argument] = process.argv.slice(2);
   const drop = process.argv.includes("--drop");
+  const dryRun = process.argv.includes("--dry-run");
 
   if (command === "secret") {
     console.log(mintSecret());
@@ -161,11 +177,11 @@ async function main() {
   }
   if (command === "info") return info(requireSurface(argument));
   if (command === "delete") return remove(requireSurface(argument));
-  if (command && SURFACES[command]) return register(command, { drop });
+  if (command && SURFACES[command]) return register(command, { drop, dryRun });
 
   console.log("Usage:");
   console.log("  node scripts/setup-telegram.mjs secret");
-  console.log("  node scripts/setup-telegram.mjs bstocks|launchpad [--drop]");
+  console.log("  node scripts/setup-telegram.mjs bstocks|launchpad [--drop] [--dry-run]");
   console.log("  node scripts/setup-telegram.mjs info bstocks|launchpad");
   console.log("  node scripts/setup-telegram.mjs delete bstocks|launchpad");
   process.exitCode = 1;

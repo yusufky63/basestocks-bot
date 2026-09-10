@@ -1,5 +1,6 @@
 import { env } from "@/config/env";
 import { readJson, withQuery } from "@/lib/http";
+import { z } from "zod";
 
 /**
  * The BStocks public API, as this bot consumes it.
@@ -175,4 +176,23 @@ export async function resolveBasename(name: string): Promise<string | null> {
   );
   const address = body?.resolved?.address;
   return typeof address === "string" && /^0x[0-9a-fA-F]{40}$/.test(address) ? address : null;
+}
+
+const activitySchema = z.object({
+  type: z.string().max(40),
+  symbol: z.string().max(24).optional(),
+  amountUsd: z.number().finite().optional(),
+  timestamp: z.number().finite().optional(),
+  txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+  verified: z.boolean(),
+});
+export type ActivityItem = z.infer<typeof activitySchema>;
+
+export async function readActivity(address: string): Promise<ActivityItem[] | null> {
+  const body = await readJson<{ items?: unknown[] }>(withQuery(env().BSTOCKS_URL, `/api/activity/${address}`), { revalidate: 15 });
+  if (!Array.isArray(body?.items)) return null;
+  return body.items.flatMap((item) => {
+    const parsed = activitySchema.safeParse(item);
+    return parsed.success ? [parsed.data] : [];
+  });
 }

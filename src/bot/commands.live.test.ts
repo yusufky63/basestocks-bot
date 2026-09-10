@@ -9,8 +9,8 @@ import type { TgUpdate } from "@/lib/telegram/types";
  * that the shapes we decided upstream returns are the shapes it actually returns, which is the
  * failure that a mocked test cannot see and that a user would meet first.
  *
- * It skips rather than fails when there is no network, so a build offline stays green. Run it on
- * purpose before a deploy: `pnpm test`.
+ * Set SKIP_LIVE_TESTS=true when running offline. With live checks enabled, an unavailable upstream
+ * fails the stock checks rather than hiding a broken integration. Run before a deploy: `pnpm test`.
  */
 const NETWORK = process.env.SKIP_LIVE_TESTS !== "true";
 
@@ -46,20 +46,39 @@ describe.skipIf(!NETWORK)("live: BStocks surface", () => {
     expect(body.reply_markup).toBeTruthy();
   }, 20_000);
 
-  it("answers /markets with every listed stock", async () => {
-    const body = await ask("/markets");
+  it("keeps stocks reachable across market pages", async () => {
+    const body = await ask("/markets name 0");
     expect(body.method).toBe("sendMessage");
     expect(body.text).toContain("Listed stocks");
-    expect(body.text).toContain("NVDA");
+    const count = /Page 1\/(\d+)/.exec(body.text ?? "");
+    expect(count).not.toBeNull();
+    const pages = Number(count![1]);
+    const rest = await Promise.all(Array.from({ length: pages - 1 }, (_, page) => ask(`/markets name ${page + 1}`)));
+    const all = [body, ...rest];
+    expect(all.map((page) => page.text).join("\n")).toContain("NVDA");
+    for (const page of all) {
+      expect(page.text!.length).toBeLessThanOrEqual(4096);
+      const markup = page.reply_markup as { inline_keyboard: { callback_data?: string }[][] };
+      const tickers = markup.inline_keyboard.flat().filter((button) => button.callback_data?.startsWith("p:"));
+      expect(tickers.length).toBeGreaterThan(0);
+      expect(tickers.length).toBeLessThanOrEqual(9);
+    }
   }, 20_000);
 
   it("builds a plan link whose legs sum to 10000", async () => {
     const body = await ask("/dca 25 NVDA,TSLA weekly");
-    const match = /legs=([^"&\s]+)/.exec(body.text ?? "");
-    const url = /https:\/\/[^"<\s]+/.exec(body.text ?? "");
-    // The link lives in the button, not the text, so assert on what the text does promise.
     expect(body.text).toContain("Recurring plan");
-    expect(match ?? url ?? true).toBeTruthy();
+    const markup = body.reply_markup as { inline_keyboard: { url?: string; web_app?: { url: string } }[][] };
+    const button = markup.inline_keyboard[0]![0]!;
+    const handoff = new URL(button.web_app?.url ?? button.url!);
+    const target = new URL(handoff.searchParams.get("to")!, "https://basestocks.finance");
+    expect(target.pathname).toBe("/automate");
+    expect(target.searchParams.get("usd")).toBe("25");
+    expect(target.searchParams.get("cadence")).toBe("7");
+    const legs = target.searchParams.get("legs")!.split(",");
+    expect(legs).toHaveLength(2);
+    expect(legs.every((leg) => /^0x[0-9a-fA-F]{40}:\d+$/.test(leg))).toBe(true);
+    expect(legs.reduce((sum, leg) => sum + Number(leg.split(":")[1]), 0)).toBe(10_000);
   }, 20_000);
 
   it("refuses a ticker it does not have, and says what it does have", async () => {

@@ -9,6 +9,7 @@ import { splitMessage } from "./html";
  * respects retry_after. That is this file.
  */
 const API = "https://api.telegram.org";
+const usernames = new Map<string, string>();
 
 export interface LinkPreviewOptions {
   is_disabled?: boolean;
@@ -20,6 +21,7 @@ export interface LinkPreviewOptions {
 
 export interface InlineKeyboardButton {
   text: string;
+  style?: "primary" | "success" | "danger";
   url?: string;
   /** At most 64 bytes. Everything this bot encodes is a short verb plus a symbol or an address. */
   callback_data?: string;
@@ -93,6 +95,14 @@ interface TgResponse<T> {
 export class Telegram {
   constructor(private readonly token: string) {}
 
+  async username(): Promise<string | null> {
+    const cached = usernames.get(this.token);
+    if (cached) return cached;
+    const me = await this.call<{ username: string }>("getMe", {});
+    if (me?.username) usernames.set(this.token, me.username);
+    return me?.username ?? null;
+  }
+
   /**
    * One call, with one retry when Telegram says to wait.
    *
@@ -115,6 +125,7 @@ export class Telegram {
       return null;
     }
     if (body.ok) return body.result ?? null;
+    if (method === "editMessageText" && body.error_code === 400 && body.description?.includes("message is not modified")) return true as T;
     const wait = body.parameters?.retry_after;
     if (wait !== undefined && attempt === 0 && wait <= 30) {
       await new Promise((r) => setTimeout(r, (wait + 1) * 1_000));
@@ -150,6 +161,18 @@ export class Telegram {
   async editMessageText(params: SendMessageParams & { message_id: number }): Promise<void> {
     const [first] = splitMessage(params.text);
     await this.call("editMessageText", { parse_mode: "HTML", ...params, text: first ?? "" });
+  }
+
+  /** An unchanged card already satisfies a refresh; it must not cause a duplicate message. */
+  async editCard(params: {
+    chat_id?: number | string;
+    message_id?: number;
+    inline_message_id?: string;
+    text: string;
+    link_preview_options?: LinkPreviewOptions;
+    reply_markup?: { inline_keyboard: InlineKeyboardButton[][] };
+  }): Promise<boolean> {
+    return (await this.call("editMessageText", { ...params, parse_mode: "HTML" })) !== null;
   }
 
   /**

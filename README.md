@@ -16,14 +16,19 @@ It holds no keys, no funds and no wallet library, and it cannot sign, approve or
 | --- | --- |
 | `/price NVDA` | DEX price, the Chainlink reference with its freshness, liquidity, 24h volume, trading status, and the multiplier when one token is no longer one share |
 | `/markets` | Every listed stock by 24h move, each ticker tappable |
+| `/search NVIDIA` or `NVDA` | Find a stock without enabling the assistant |
+| `/watch NVDA`, `/watchlist`, `/unwatch NVDA` | A private list of up to 24 stocks, stored by canonical address |
 | `/wallet`, `/portfolio` | Holdings, value, USDC, Earn and liquidity for a wallet you name |
+| `/activity` | Public activity for the saved wallet, with confirmation labels and explorer links |
 | `/buy`, `/sell` | Opens the trade panel in an app that has a wallet. See below |
 | `/dca 25 NVDA weekly` | A link that opens the plan wizard already filled in |
+| `/dca` | Ticker → amount → cadence buttons, then a review link into the same wizard |
 | `/baskets` | Starter templates, with the mix spelled out |
 | `/earn` | Where idle USDC earns, with the venues that did not answer named |
 | `/news NVDA` | Headlines for one stock or the ecosystem. Titles and links only |
 | `/gift`, `/pools` | Gifting and open gift pools |
 | `/stats`, `/status` | Verified activity, and what is up |
+| `/settings`, `/cancel`, `/clearwatchlist` | Saved-data controls, cancel an input step, clear saved stocks |
 | free text | The app's own assistant. Say what you want and a drafted trade comes back as a button |
 | a pasted claim link | Explains what it is. A message containing a claim **key** is dropped unread |
 
@@ -47,11 +52,14 @@ Both handles answer inline queries (`@bot NVDA`), which work in chats the bot wa
 A bot that only answers slash commands is a command line with a worse font. Three things fix that,
 none of which needs a Mini App.
 
-- **A persistent keyboard** replaces the phone keyboard in a private chat, so Markets, Stats and
-  Help are one thumb away. Labels map back to commands in `src/bot/nav.ts`, next to the labels.
+- **A persistent keyboard** puts Markets, Watchlist, Portfolio, News, Menu and Help one tap away.
+  The inline menu also exposes Earn, baskets, recurring plans, gifts, stats, status and settings.
 - **Inline buttons carry the next step.** A price card offers Buy and Sell, the markets table makes
   every ticker tappable, a launchpad list makes every token tappable, and a tap edits the message
-  that was tapped rather than piling another one underneath it.
+  that was tapped rather than piling another one underneath it. Market pages show nine stocks,
+  with move/volume/alphabetical sorting and refresh controls. Failed edits fall back to a fresh
+  message; an unchanged refresh does not duplicate a card. Shared inline cards use Telegram's
+  `inline_message_id` and never expose personal data or private-chat-only buttons.
 - **Free text reaches the assistant with its drafts intact.** "buy fifty dollars of NVDA" comes back
   as a button, because the endpoint returns a typed action whose address was resolved server-side
   from validated tool input. This service never reads an address out of model output, and the button
@@ -60,6 +68,12 @@ none of which needs a Mini App.
 `callback_data` is parsed as strictly as anything else arriving from a chat: a short verb, a colon,
 one argument, and anything unrecognised becomes null rather than a best guess. Telegram allows 64
 bytes and a token address is 42 of them, which `src/bot/nav.test.ts` holds it to.
+
+`/wallet` and `/search` accept the next private message as input for ten minutes. `/cancel`, a menu
+button or another command exits that input step. A pasted address previews public holdings without
+saving it; saving requires the wallet step or `/wallet <address>`. Invalid explicit addresses never
+fall back to a different saved wallet. Plan links reject missing stocks, duplicate resolved addresses,
+more than twelve legs, and allocations below BaseStocks' $1 per-leg minimum.
 
 ## Reading happens in Telegram, signing happens in the wallet
 
@@ -139,7 +153,19 @@ node scripts/setup-telegram.mjs launchpad
 ```
 
 That sets the webhook with its secret token and an explicit `allowed_updates` list, and publishes
-the command menu for private and group scopes. Inline mode is a BotFather setting (`/setinline`),
+the command menu for default, private and group scopes, the bot name, description and short description.
+Preview all registration changes locally, without contacting Telegram or requiring tokens:
+
+```bash
+node scripts/setup-telegram.mjs bstocks --dry-run
+node scripts/setup-telegram.mjs launchpad --dry-run
+```
+
+Keep `BOT_URL` and `APP_URL` on the same public origin. Optional `TELEGRAM_BSTOCKS_USERNAME` and
+`TELEGRAM_LAUNCHPAD_USERNAME` omit the `@`; otherwise the bot obtains its own username with `getMe`
+before handling an addressed command. Commands addressed to other bots are ignored.
+
+Inline mode is a BotFather setting (`/setinline`),
 not an API call.
 
 To stop delivery immediately, without a redeploy:
@@ -206,7 +232,10 @@ pnpm lint
 ## Not built yet
 
 `/chart` (a rendered candle image), launch alerts pushed from the launchpad indexer, wallet linking
-and anything that follows from it (`/me`, notification preferences, plan alerts), and the Telegram
-Mini App. The Mini App is the one with a real prerequisite: the launchpad currently sends
-`X-Frame-Options: DENY`, which Telegram Web and Desktop cannot embed, and a wallet inside a Telegram
-WebView needs WalletConnect since there is no injected provider there.
+with cryptographic proof, notification preferences and plan alerts. `/me` already reads the saved
+wallet bookmark; it is not authenticated wallet linking. The `/open` Mini App is a wallet handoff,
+not a wallet or trading engine. AI conversation remains opt-in because the current BaseStocks
+assistant meters unauthenticated callers by IP.
+
+See [the integration notes](docs/telegram-integration.md) for the verified API contract, Telegram
+documentation and the scope of local, live and browser checks.

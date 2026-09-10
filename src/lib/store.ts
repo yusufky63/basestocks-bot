@@ -32,9 +32,9 @@ function upstash(): { url: string; token: string } | null {
   return { url: e.UPSTASH_REDIS_REST_URL, token: e.UPSTASH_REDIS_REST_TOKEN };
 }
 
-async function command(parts: string[]): Promise<unknown | null> {
+async function command(parts: string[]): Promise<unknown> {
   const cfg = upstash();
-  if (!cfg) return null;
+  if (!cfg) return undefined;
   try {
     const res = await fetch(cfg.url, {
       method: "POST",
@@ -43,11 +43,12 @@ async function command(parts: string[]): Promise<unknown | null> {
       signal: AbortSignal.timeout(2_500),
       cache: "no-store",
     });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { result?: unknown };
+    if (!res.ok) return undefined;
+    const body = (await res.json()) as { result?: unknown; error?: string };
+    if (body.error || !("result" in body)) return undefined;
     return body.result ?? null;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
@@ -60,7 +61,8 @@ async function command(parts: string[]): Promise<unknown | null> {
  */
 export async function claimOnce(key: string, ttlSec: number): Promise<boolean> {
   const shared = await command(["SET", key, "1", "NX", "EX", String(ttlSec)]);
-  if (shared !== null) return shared === "OK";
+  // Redis nil means NX lost to another instance. It is not a transport failure.
+  if (shared !== undefined) return shared === "OK";
   sweep();
   const hit = memory.get(key);
   if (hit && hit.expiresAt > Date.now()) return false;
@@ -72,9 +74,8 @@ export async function claimOnce(key: string, ttlSec: number): Promise<boolean> {
 export async function bump(key: string, ttlSec: number): Promise<number> {
   const cfg = upstash();
   if (cfg) {
-    const next = await command(["INCR", key]);
+    const next = await command(["EVAL", "local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end; return n", "1", key, String(ttlSec)]);
     if (typeof next === "number") {
-      if (next === 1) void command(["EXPIRE", key, String(ttlSec)]);
       return next;
     }
   }
@@ -97,14 +98,16 @@ export async function bump(key: string, ttlSec: number): Promise<number> {
  * gift key cannot end up stored. Without a shared store it lives in process memory and evaporates
  * with the instance, which is the quieter of the two behaviours.
  */
-export async function putText(key: string, value: string, ttlSec: number): Promise<void> {
+export async function putText(key: string, value: string, ttlSec: number): Promise<boolean> {
   const shared = await command(["SET", key, value, "EX", String(ttlSec)]);
-  if (shared !== null) return;
+  if (shared !== undefined) return shared === "OK";
+  if (upstash()) return false;
   memoryText.set(key, { value, expiresAt: Date.now() + ttlSec * 1_000 });
   if (memoryText.size > 512) {
     const now = Date.now();
     for (const [k, v] of memoryText) if (v.expiresAt <= now) memoryText.delete(k);
   }
+  return true;
 }
 
 export async function getText(key: string): Promise<string | null> {
@@ -116,6 +119,22 @@ export async function getText(key: string): Promise<string | null> {
   return hit && hit.expiresAt > Date.now() ? hit.value : null;
 }
 
+/** Keep simultaneous watchlist taps from overwriting one another across instances. */
+export async function updateTextList(key: string, item: string, add: boolean, limit: number, ttlSec: number): Promise<boolean> {
+  if (upstash()) {
+    const script = "local raw = redis.call('GET', KEYS[1]); local list = raw and cjson.decode(raw) or {}; local out = {}; local found = false; for _,v in ipairs(list) do if v == ARGV[1] then found = true end; if v ~= ARGV[1] or ARGV[2] == '1' then table.insert(out, v) end end; if ARGV[2] == '1' and not found then if #out >= tonumber(ARGV[3]) then return 0 end; table.insert(out, ARGV[1]) end; redis.call('SET', KEYS[1], #out == 0 and '[]' or cjson.encode(out), 'EX', ARGV[4]); return 1";
+    return await command(["EVAL", script, "1", key, item, add ? "1" : "0", String(limit), String(ttlSec)]) === 1;
+  }
+  const hit = memoryText.get(key);
+  let list: string[] = [];
+  try { list = hit && hit.expiresAt > Date.now() ? JSON.parse(hit.value) : []; } catch { /* Expired or invalid state starts empty. */ }
+  if (!Array.isArray(list)) list = [];
+  if (add && !list.includes(item) && list.length >= limit) return false;
+  const next = add ? [...new Set([...list, item])] : list.filter((value) => value !== item);
+  memoryText.set(key, { value: JSON.stringify(next), expiresAt: Date.now() + ttlSec * 1_000 });
+  return true;
+}
+
 /**
  * Remembers a small fact about one Telegram user for a while.
  *
@@ -125,7 +144,7 @@ export async function getText(key: string): Promise<string | null> {
  */
 export async function remember(key: string, ttlSec: number): Promise<void> {
   const shared = await command(["SET", key, "1", "EX", String(ttlSec)]);
-  if (shared !== null) return;
+  if (shared !== undefined) return;
   sweep();
   memory.set(key, { value: 1, expiresAt: Date.now() + ttlSec * 1_000 });
 }

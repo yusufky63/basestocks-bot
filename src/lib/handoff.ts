@@ -28,7 +28,9 @@ import { env } from "@/config/env";
 const ALLOWED_PATHS: RegExp[] = [
   /^\/stocks\/0x[0-9a-fA-F]{40}(\?[\w=&%.,:-]*)?$/,
   /^\/token\/0x[0-9a-fA-F]{40}$/,
-  /^\/(markets|portfolio|earn|gifts|build|automate|create)(\?[\w=&%.,:-]*)?$/,
+  /^\/(markets|portfolio|earn|gifts|build|automate|create)(\?[\w=&%.,:+-]*)?$/,
+  /^\/build\/[a-z0-9]+(?:-[a-z0-9]+)*$/,
+  /^\/pools\/[A-Za-z0-9_-]{1,80}$/,
 ];
 
 export type App = "bstocks" | "launchpad";

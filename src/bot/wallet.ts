@@ -26,13 +26,13 @@ export async function getWallet(userId: number | string): Promise<string | null>
   return stored && isAddress(stored) ? stored : null;
 }
 
-export async function setWallet(userId: number | string, address: string): Promise<void> {
-  await putText(key(userId), address, TTL_SEC);
+export async function setWallet(userId: number | string, address: string): Promise<boolean> {
+  return isAddress(address) && await putText(key(userId), address, TTL_SEC);
 }
 
-export async function forgetWallet(userId: number | string): Promise<void> {
+export async function forgetWallet(userId: number | string): Promise<boolean> {
   // A short life rather than a delete, because the stores behind this do not all have one.
-  await putText(key(userId), "", 60);
+  return putText(key(userId), "", 60);
 }
 
 /**

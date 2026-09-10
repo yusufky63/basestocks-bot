@@ -1,9 +1,21 @@
 {
   "allowedUpdates": [
     "message",
-    "edited_message",
     "inline_query",
     "callback_query",
     "my_chat_member"
-  ]
+  ],
+  "personalCommands": ["wallet", "portfolio", "me", "forget", "watchlist", "watch", "unwatch", "clearwatchlist", "activity", "settings", "reset"],
+  "profiles": {
+    "bstocks": {
+      "name": "BaseStocks",
+      "short_description": "Stocks on Base: prices, watchlists, portfolios and wallet links. For eligible persons outside the United States.",
+      "description": "Your BaseStocks market desk in Telegram. Browse live stock data, save a private watchlist, read public wallet holdings and activity, explore news, Earn and gift pools, or build a recurring plan link. Tap Start, then Menu. Every transaction is reviewed and signed in your own wallet. Coinbase Tokenized Stocks are offered only to eligible persons outside the United States."
+    },
+    "launchpad": {
+      "name": "BaseStocks Launchpad",
+      "short_description": "Discover stock-paired community tokens on Base. Check prices, holders and the current launch fee.",
+      "description": "Explore BaseStocks Launchpad tokens by volume or launch time, search by name, and inspect a token's current fee before opening it in your wallet. Pools charge a declining launch fee during their first twenty seconds. Community tokens are a separate product with separate risks. This bot never holds funds or signs transactions."
+    }
+  }
 }
