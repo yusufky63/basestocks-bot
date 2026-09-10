@@ -130,6 +130,23 @@ export class Telegram {
     }
   }
 
+  /**
+   * Sends one message and hands back its id, so a placeholder can become the answer.
+   *
+   * Worth the extra call for anything slow: a chat action lapses after about five seconds and an
+   * assistant turn can run for forty, so the typing bubble stops and the chat looks dead. A message
+   * that says what it is doing, and then turns into the answer, never does.
+   */
+  async sendAndTrack(params: SendMessageParams): Promise<number | null> {
+    const [first] = splitMessage(params.text);
+    const sent = await this.call<{ message_id: number }>("sendMessage", {
+      parse_mode: "HTML",
+      ...params,
+      text: first ?? "",
+    });
+    return sent?.message_id ?? null;
+  }
+
   async editMessageText(params: SendMessageParams & { message_id: number }): Promise<void> {
     const [first] = splitMessage(params.text);
     await this.call("editMessageText", { parse_mode: "HTML", ...params, text: first ?? "" });

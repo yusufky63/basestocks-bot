@@ -25,6 +25,17 @@ export interface TradeAction {
   amountUsd?: number;
   quantity?: number;
   payWith?: "USDC" | "ETH";
+  /**
+   * What the app already priced when it built the draft: the estimated output, the route that won,
+   * and the network fee. Carrying it through is what lets the bot show a figure it did not have to
+   * read out of a sentence.
+   */
+  indicative?: {
+    priceUsd?: number | null;
+    estOut?: string;
+    provider?: string;
+    feeUsd?: number | null;
+  };
 }
 
 export interface NewsAction {

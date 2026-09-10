@@ -247,7 +247,7 @@ export function launchpadListButtons(tokens: { symbol: string; token: string }[]
  * the app without ever reading an address out of model output. The tap opens a page. It does not
  * place an order, and nothing here can.
  */
-export function actionButtons(actions: AssistantAction[]): InlineKeyboardButton[][] {
+export function actionButtons(actions: AssistantAction[], isPrivate = false): InlineKeyboardButton[][] {
   const rows: InlineKeyboardButton[][] = [];
   for (const action of actions) {
     if (action.kind === "trade") {
@@ -259,6 +259,7 @@ export function actionButtons(actions: AssistantAction[]): InlineKeyboardButton[
           "bstocks",
           `/stocks/${action.assetAddress}?trade=${action.side}`,
           `${verb} ${action.symbol}`,
+          isPrivate,
         ),
       ]);
       continue;

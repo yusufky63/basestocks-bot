@@ -14,6 +14,7 @@ import { askAssistant } from "@/services/assistant";
 import { KEYBOARD_ALIASES, actionButtons, decode, encode, menuCard, replyKeyboard, signButton, webAppOrUrl } from "./nav";
 import { confirmEligibility, eligibilityCard, hasConfirmed } from "./eligibility";
 import { appendTurns, clearHistory, loadHistory } from "./history";
+import { THINKING, assistantCard, refusalCard } from "./assistant-card";
 import { forgetWallet, getWallet, setWallet, toAddress } from "./wallet";
 import { COPY } from "./copy";
 import { CLAIM_HELP, KEY_WARNING, inspectForClaim } from "./claim";
@@ -853,43 +854,35 @@ async function assistantReply(tg: Telegram, message: TgMessage): Promise<Respons
 
   const question = (message.text ?? "").slice(0, 1_000);
   after(async () => {
-    await tg.chatAction(message.chat.id, message.message_thread_id);
-    // The assistant ends its own replies with "want me to adjust the size?", so it has to be able
-    // to hear the answer. Six turns, thirty minutes, keyed by chat.
+    // A placeholder first, edited into the answer. The typing bubble lapses after about five
+    // seconds and a turn can run for forty, so on its own it leaves the chat looking dead.
+    const placeholder = await tg.sendAndTrack({
+      chat_id: message.chat.id,
+      message_thread_id: message.message_thread_id,
+      text: THINKING,
+      parse_mode: "HTML",
+      link_preview_options: { is_disabled: true },
+    });
+
     const history = await loadHistory(message.chat.id);
     const answer = await askAssistant([...history, { role: "user", content: question }]);
 
-    if (answer.refusal) {
-      await tg.sendMessage({
-        chat_id: message.chat.id,
-        message_thread_id: message.message_thread_id,
-        text: esc(answer.refusal),
-        parse_mode: "HTML",
-        link_preview_options: { is_disabled: true },
-      });
-      return;
-    }
+    const text = answer.refusal ? refusalCard(answer.refusal) : assistantCard(answer.reply, answer.actions);
+    const buttons = answer.refusal ? [] : actionButtons(answer.actions, message.chat.type === "private");
+    if (!answer.refusal) await appendTurns(message.chat.id, question, answer.reply);
 
-    // Model output is data. It is escaped without exception, exactly like a headline or a token
-    // name, and the only links in the reply are the ones `actionButtons` built from typed fields.
-    const buttons = actionButtons(answer.actions);
-    await appendTurns(message.chat.id, question, answer.reply);
-
-    // The assistant writes for the website, where a draft appears as a review card on screen. Here
-    // it is a button, so one short line bridges its words to the thing below them. It deliberately
-    // does not repeat the signing caveat: the model already said it, and saying it twice in two
-    // slightly different ways reads as two different rules.
-    const drafted = answer.actions.some((a) => a.kind !== "news");
-    const handoff = drafted ? `\n\n<i>${esc("↓ The review card is the button below.")}</i>` : "";
-
-    await tg.sendMessage({
+    const payload = {
       chat_id: message.chat.id,
-      message_thread_id: message.message_thread_id,
-      text: `${esc(answer.reply)}${handoff}`,
-      parse_mode: "HTML",
+      text,
+      parse_mode: "HTML" as const,
       link_preview_options: { is_disabled: true },
       reply_markup: buttons.length > 0 ? { inline_keyboard: buttons } : undefined,
-    });
+    };
+
+    // Editing keeps one message where a person is already looking. If the placeholder never landed
+    // there is nothing to edit, so the answer arrives on its own.
+    if (placeholder !== null) await tg.editMessageText({ ...payload, message_id: placeholder });
+    else await tg.sendMessage({ ...payload, message_thread_id: message.message_thread_id });
   });
   return webhookAck();
 }

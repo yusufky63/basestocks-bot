@@ -112,22 +112,13 @@ async function register(surface, { drop }) {
   await call(token, "setMyCommands", { commands: groupCommands, scope: { type: "all_group_chats" } });
 
   /**
-   * Turkish descriptions, which Telegram serves automatically to a client set to Turkish.
+   * English only, by decision.
    *
-   * This audience is non-US by construction, so a localized menu is not decoration. The commands
-   * themselves stay in English: a command is a name, and translating it would mean the same bot
-   * answers to different words depending on a setting nobody can see.
+   * Telegram will serve a per-language menu if you give it one, and a localized set was tried. It
+   * came back out: this bot's own copy, the eligibility notice it has to reproduce rather than
+   * paraphrase, and every reply it writes are English, so a Turkish menu leading into an English
+   * conversation is a promise the next screen breaks.
    */
-  const tr = table._tr ?? {};
-  const localized = commands.filter((c) => tr[c.command]).map((c) => ({ command: c.command, description: tr[c.command] }));
-  if (localized.length > 0) {
-    await call(token, "setMyCommands", { commands: localized, scope: { type: "all_private_chats" }, language_code: "tr" });
-    await call(token, "setMyCommands", {
-      commands: localized.filter((c) => !personal.has(c.command)),
-      scope: { type: "all_group_chats" },
-      language_code: "tr",
-    });
-  }
 
   // The button beside the message box. `commands` is the default, but setting it explicitly means a
   // leftover web_app button from an experiment cannot survive a redeploy.
@@ -139,7 +130,7 @@ async function register(surface, { drop }) {
   console.log(`  secret         set (${secret.length} chars)`);
   console.log(`  updates        ${(info.allowed_updates ?? ALLOWED_UPDATES).join(", ")}`);
   console.log(`  pending        ${info.pending_update_count ?? 0}`);
-  console.log(`  commands       ${commands.length} private, ${groupCommands.length} group, ${localized.length} tr`);
+  console.log(`  commands       ${commands.length} private, ${groupCommands.length} group`);
   if (info.last_error_message) console.log(`  last error     ${info.last_error_message}`);
   console.log("");
   console.log("  Inline mode is a BotFather setting, not an API call: /setinline on @BotFather.");

@@ -118,31 +118,5 @@
       "command": "help",
       "description": "What this bot can do"
     }
-  ],
-  "_tr": {
-    "menu": "Komut yerine butonlar",
-    "price": "Bir hissenin fiyatı, referansı ve likiditesi",
-    "markets": "Listedeki tüm hisseler, 24s hareketine göre",
-    "portfolio": "Varlıkların, değeri ve bugünkü hareketi",
-    "wallet": "Hangi cüzdanın senin olduğunu söyle",
-    "buy": "Alım panelini aç",
-    "sell": "Satım panelini aç",
-    "dca": "Düzenli alım planı linki oluştur",
-    "baskets": "Hazır sepetler, tavsiye değil",
-    "earn": "Bekleyen USDC nerede getiri sağlar",
-    "news": "Bir hissenin veya ekosistemin başlıkları",
-    "gift": "Hisse hediye et veya havuz aç",
-    "pools": "Açık hediye havuzları",
-    "stats": "Doğrulanmış platform aktivitesi",
-    "status": "Ne çalışıyor, ne çalışmıyor",
-    "forget": "Kayıtlı cüzdanımı sil",
-    "reset": "Konuşmayı unut",
-    "help": "Neler yapabilirim",
-    "top": "24s işlem hacmine göre tokenler",
-    "new": "Son çıkanlar, ücret geri sayımıyla",
-    "token": "Bir tokenin kartı",
-    "search": "İsim veya sembolle token bul",
-    "creator": "Bir adresin çıkardığı tokenler",
-    "launch": "Doldurulmuş oluşturma linki"
-  }
+  ]
 }
