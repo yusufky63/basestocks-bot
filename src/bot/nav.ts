@@ -32,6 +32,7 @@ export type Action =
   | { kind: "stats" }
   | { kind: "menu" }
   | { kind: "portfolio" }
+  | { kind: "pools" }
   | { kind: "price"; symbol: string }
   | { kind: "buy"; symbol: string }
   | { kind: "sell"; symbol: string }
@@ -56,6 +57,8 @@ export function encode(action: Action): string {
       return "n";
     case "portfolio":
       return "pf";
+    case "pools":
+      return "pl";
     case "top":
       return "lt";
     case "new":
@@ -80,6 +83,7 @@ export function decode(data: string | undefined): Action | null {
   if (data === "st") return { kind: "stats" };
   if (data === "n") return { kind: "menu" };
   if (data === "pf") return { kind: "portfolio" };
+  if (data === "pl") return { kind: "pools" };
   if (data === "lt") return { kind: "top" };
   if (data === "ln") return { kind: "new" };
 

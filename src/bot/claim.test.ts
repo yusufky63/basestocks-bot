@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { inspectForClaim } from "./claim";
-import { parseCommand, parseDca } from "./commands";
+import { parseCommand, parseDca, parseStartPayload } from "./commands";
 
 describe("inspectForClaim", () => {
   /**
@@ -72,5 +72,34 @@ describe("parseDca", () => {
     expect(parseDca("25 NVDA fortnightly")).toBeNull();
     expect(parseDca("-5 NVDA weekly")).toBeNull();
     expect(parseDca("")).toBeNull();
+  });
+});
+
+describe("parseStartPayload", () => {
+  /**
+   * `t.me/<bot>?start=stock_NVDA` is how a link shared anywhere lands somebody on the thing it was
+   * about. The payload is 64 characters chosen by whoever built the link, and it decides which
+   * command runs, so it is parsed as strictly as anything else that arrives from outside.
+   */
+  it("opens the bot on what the link was about", () => {
+    expect(parseStartPayload("stock_NVDA")).toEqual({ command: "price", args: "NVDA" });
+    expect(parseStartPayload("buy_TSLA")).toEqual({ command: "buy", args: "TSLA" });
+    expect(parseStartPayload(`token_0x${"a".repeat(40)}`)).toEqual({ command: "token", args: `0x${"a".repeat(40)}` });
+    expect(parseStartPayload(`wallet_0x${"b".repeat(40)}`)).toEqual({ command: "portfolio", args: `0x${"b".repeat(40)}` });
+  });
+
+  it("falls through to the welcome for an attribution tag rather than erroring", () => {
+    expect(parseStartPayload("src_x")).toBeNull();
+    expect(parseStartPayload("src_site")).toBeNull();
+  });
+
+  it("refuses anything it does not recognise", () => {
+    expect(parseStartPayload("")).toBeNull();
+    expect(parseStartPayload("stock_")).toBeNull();
+    expect(parseStartPayload("stock_<script>")).toBeNull();
+    expect(parseStartPayload("token_NVDA")).toBeNull();
+    expect(parseStartPayload(`token_0x${"z".repeat(40)}`)).toBeNull();
+    expect(parseStartPayload("help")).toBeNull();
+    expect(parseStartPayload("a".repeat(65))).toBeNull();
   });
 });

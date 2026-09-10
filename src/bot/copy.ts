@@ -122,4 +122,7 @@ export const COPY: Record<Surface, SurfaceCopy> = {
  * A scope hides an entry from a group's menu; it does not refuse the command, so the router still
  * checks the chat type itself.
  */
-export const COMMANDS: Record<Surface, { command: string; description: string }[]> = commandData;
+export const COMMANDS: Record<Surface, { command: string; description: string }[]> = {
+  bstocks: commandData.bstocks,
+  launchpad: commandData.launchpad,
+};

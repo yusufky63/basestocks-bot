@@ -97,13 +97,41 @@ async function register(surface, { drop }) {
     max_connections: 40,
   });
 
-  const commands = JSON.parse(readFileSync(resolve(ROOT, "src/bot/commands.data.json"), "utf8"))[surface];
+  const table = JSON.parse(readFileSync(resolve(ROOT, "src/bot/commands.data.json"), "utf8"));
+  const commands = table[surface];
 
-  // Private chats see everything. Groups see the same list here because no command in this build
-  // returns anything personal; the day one does, it comes off the group scope and the router
-  // refuses it as well, because a scope hides a menu entry without refusing the command.
+  /**
+   * Groups see a shorter list, because two commands here answer with somebody's own holdings and a
+   * menu entry that cannot work in the chat it is shown in is worse than no entry. The router
+   * refuses them there as well: a scope hides an entry, it does not refuse the command.
+   */
+  const personal = new Set(["portfolio", "wallet", "forget"]);
+  const groupCommands = commands.filter((c) => !personal.has(c.command));
+
   await call(token, "setMyCommands", { commands, scope: { type: "all_private_chats" } });
-  await call(token, "setMyCommands", { commands, scope: { type: "all_group_chats" } });
+  await call(token, "setMyCommands", { commands: groupCommands, scope: { type: "all_group_chats" } });
+
+  /**
+   * Turkish descriptions, which Telegram serves automatically to a client set to Turkish.
+   *
+   * This audience is non-US by construction, so a localized menu is not decoration. The commands
+   * themselves stay in English: a command is a name, and translating it would mean the same bot
+   * answers to different words depending on a setting nobody can see.
+   */
+  const tr = table._tr ?? {};
+  const localized = commands.filter((c) => tr[c.command]).map((c) => ({ command: c.command, description: tr[c.command] }));
+  if (localized.length > 0) {
+    await call(token, "setMyCommands", { commands: localized, scope: { type: "all_private_chats" }, language_code: "tr" });
+    await call(token, "setMyCommands", {
+      commands: localized.filter((c) => !personal.has(c.command)),
+      scope: { type: "all_group_chats" },
+      language_code: "tr",
+    });
+  }
+
+  // The button beside the message box. `commands` is the default, but setting it explicitly means a
+  // leftover web_app button from an experiment cannot survive a redeploy.
+  await call(token, "setChatMenuButton", { menu_button: { type: "commands" } });
 
   const info = await call(token, "getWebhookInfo");
   console.log(`@${me.username} (${surface})`);
@@ -111,7 +139,7 @@ async function register(surface, { drop }) {
   console.log(`  secret         set (${secret.length} chars)`);
   console.log(`  updates        ${(info.allowed_updates ?? ALLOWED_UPDATES).join(", ")}`);
   console.log(`  pending        ${info.pending_update_count ?? 0}`);
-  console.log(`  commands       ${commands.length} published to private and group scopes`);
+  console.log(`  commands       ${commands.length} private, ${groupCommands.length} group, ${localized.length} tr`);
   if (info.last_error_message) console.log(`  last error     ${info.last_error_message}`);
   console.log("");
   console.log("  Inline mode is a BotFather setting, not an API call: /setinline on @BotFather.");

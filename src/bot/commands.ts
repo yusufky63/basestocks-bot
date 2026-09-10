@@ -19,6 +19,8 @@ import { COPY } from "./copy";
 import { CLAIM_HELP, KEY_WARNING, inspectForClaim } from "./claim";
 import { isAddress, resolveStock, splitTickers } from "./resolve";
 import { marketListCard, marketsCard, portfolioCard, stockCard, tokenCard, type Card } from "./render";
+import { earnCard, helpCard, newsCard, poolsCard, statusCard, templatesCard } from "./ecosystem-cards";
+import { readEarn, readNews, readPools, readStatus, readTemplates } from "@/services/ecosystem";
 
 export interface Ctx {
   surface: Surface;
@@ -110,30 +112,73 @@ export function parseCommand(text: string): { command: string; args: string } | 
   return { command: match[1].toLowerCase(), args: (match[3] ?? "").trim() };
 }
 
+
+/**
+ * The `?start=` payload, which Telegram limits to 64 characters of `A-Za-z0-9_-`.
+ *
+ * Only the prefixes below mean anything; everything else, including the `src_*` values used purely
+ * for attribution, falls through to the ordinary welcome. Parsing is strict because this is a
+ * string a stranger chose: it decides which command runs.
+ */
+export function parseStartPayload(raw: string): { command: string; args: string } | null {
+  const payload = raw.trim();
+  if (!payload || payload.length > 64 || !/^[A-Za-z0-9_-]+$/.test(payload)) return null;
+
+  const at = payload.indexOf("_");
+  if (at <= 0) return null;
+  const kind = payload.slice(0, at);
+  const rest = payload.slice(at + 1);
+  if (!rest) return null;
+
+  if (kind === "stock" && /^[A-Za-z0-9.-]{1,12}$/.test(rest)) return { command: "price", args: rest };
+  if (kind === "buy" && /^[A-Za-z0-9.-]{1,12}$/.test(rest)) return { command: "buy", args: rest };
+  if (kind === "token" && /^0x[0-9a-fA-F]{40}$/.test(rest)) return { command: "token", args: rest };
+  if (kind === "wallet" && /^0x[0-9a-fA-F]{40}$/.test(rest)) return { command: "portfolio", args: rest };
+  return null;
+}
+
 async function route(command: string, ctx: Ctx): Promise<Card | null> {
   const shared: Record<string, (c: Ctx) => Promise<Card> | Card> = {
     reset: async (c) => {
       await clearHistory(c.chat.id);
       return { text: esc("Forgotten. We can start again."), preview: { is_disabled: true } };
     },
-    start: (c) => ({
-      text: COPY[c.surface].start,
-      preview: { is_disabled: true },
-      // The one message where replacing the phone keyboard is worth the rows it costs.
-      replyKeyboard: c.isPrivate ? replyKeyboard(c.surface) : undefined,
-    }),
+    /**
+     * `/start` with a payload, which is Telegram's own deep-link mechanism.
+     *
+     * `t.me/<bot>?start=stock_NVDA` opens the bot already showing NVDA, so a link shared anywhere
+     * lands somebody on the thing it was about rather than on a greeting. The payload is 64
+     * characters of `A-Za-z0-9_-`, so it is parsed strictly and anything unrecognised falls through
+     * to the ordinary welcome rather than erroring.
+     */
+    start: async (c) => {
+      const deep = parseStartPayload(c.args);
+      if (deep) {
+        const card = await route(deep.command, { ...c, args: deep.args });
+        // The keyboard still comes with the first message, whatever that first message turned out
+        // to be: it is the thing that makes the bot usable without typing.
+        if (card) return { ...card, replyKeyboard: c.isPrivate ? replyKeyboard(c.surface) : undefined };
+      }
+      return {
+        text: COPY[c.surface].start,
+        preview: { is_disabled: true },
+        replyKeyboard: c.isPrivate ? replyKeyboard(c.surface) : undefined,
+      };
+    },
     menu: (c) => {
       const card = menuCard(c.surface);
       return { text: card.text, keyboard: card.keyboard, preview: { is_disabled: true }, editable: true };
     },
-    help: (c) => ({ text: COPY[c.surface].help, preview: { is_disabled: true } }),
+    // The BStocks help is a card with buttons; the launchpad's stays prose until it has as many
+    // paths worth offering.
+    help: (c) => (c.surface === "bstocks" ? helpCard() : { text: COPY[c.surface].help, preview: { is_disabled: true } }),
   };
   const table = ctx.surface === "bstocks" ? BSTOCKS_COMMANDS : LAUNCHPAD_COMMANDS;
   const handler = shared[command] ?? table[command];
   if (!handler) {
     // Silence in a group: an unknown slash command is usually meant for a different bot.
     if (!ctx.isPrivate) return null;
-    return { text: COPY[ctx.surface].help, preview: { is_disabled: true } };
+    return ctx.surface === "bstocks" ? helpCard() : { text: COPY[ctx.surface].help, preview: { is_disabled: true } };
   }
   return handler(ctx);
 }
@@ -323,6 +368,55 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     ]);
   },
 
+  earn: async () => {
+    const view = await readEarn();
+    return view ? earnCard(view) : upstreamDown();
+  },
+
+  news: async (ctx) => {
+    // A ticker narrows it to that stock's wire; without one it is the Base and Coinbase
+    // tokenized-stock feed, which is the one that actually moves these names.
+    if (!ctx.args) return newsCard(await readNews({ scope: "ecosystem" }), "Base and Coinbase");
+    const stocks = await listStocks();
+    const { stock, suggestions } = resolveStock(stocks, ctx.args);
+    if (!stock) return notFound(ctx.args, suggestions);
+    return newsCard(await readNews({ symbol: stock.symbol }), `${stock.symbol} headlines`);
+  },
+
+  status: async () => {
+    const report = await readStatus();
+    return report ? statusCard(report) : upstreamDown();
+  },
+
+  baskets: async () => {
+    const [templates, stocks] = await Promise.all([readTemplates(), listStocks()]);
+    if (templates.length === 0) return upstreamDown();
+    return templatesCard(templates, symbolLookup(stocks));
+  },
+
+  pools: async () => {
+    const [pools, stocks] = await Promise.all([readPools(), listStocks()]);
+    return poolsCard(pools, symbolLookup(stocks));
+  },
+
+  gift: async (ctx) => {
+    const lines = [
+      b("Give stock to someone"),
+      "",
+      esc("Send it to a Basename or an address, or make a claim link for somebody with no wallet at all: the stock waits in an ownerless escrow until they open the link, and they claim it with a passkey wallet created on the spot."),
+      "",
+      esc("A gift pool is the same idea for a group: one deposit, many equal claims, one per wallet, and whatever nobody takes comes back to you."),
+    ];
+    return {
+      text: lines.join("\n"),
+      keyboard: [
+        [{ ...webAppOrUrl(bstocksUrl("/gifts"), ctx.isPrivate), text: "Open gifts" }],
+        [{ text: "Open pools", callback_data: encode({ kind: "pools" }) }],
+      ],
+      preview: { is_disabled: true },
+    };
+  },
+
   stats: async () => {
     const stats = await readStats();
     const window = stats?.windows?.["7d"];
@@ -346,6 +440,12 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     };
   },
 };
+
+/** Addresses to tickers, for the cards that hold an allocation or a pool leg rather than a stock. */
+function symbolLookup(stocks: V1Stock[]): (address: string) => string | null {
+  const map = new Map(stocks.map((s) => [s.address.toLowerCase(), s.symbol]));
+  return (address: string) => map.get(address.toLowerCase()) ?? null;
+}
 
 function numberOr(value: number | undefined): string {
   return typeof value === "number" ? value.toLocaleString("en-US") : "—";
@@ -494,6 +594,19 @@ const LAUNCHPAD_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
 
   buy: (ctx) => tokenHandoff(ctx, "buy"),
   sell: (ctx) => tokenHandoff(ctx, "sell"),
+
+  creator: async (ctx) => {
+    if (!ctx.args) return { text: esc("Whose tokens? Try /creator 0x..."), preview: { is_disabled: true } };
+    const address = ctx.args.trim();
+    if (!isAddress(address)) return { text: esc("That is not an address."), preview: { is_disabled: true } };
+    const page = await listMarkets({ creator: address, limit: 10, orderBy: "newest" });
+    if (!page) return upstreamDown();
+    return marketListCard(
+      `Launched by ${shortAddress(address)}`,
+      "Newest first. A creator earns 70% of the fee on every swap in their own pools.",
+      page.markets,
+    );
+  },
 
   search: async (ctx) => {
     if (!ctx.args) return { text: esc("Search for what? Try /search doge"), preview: { is_disabled: true } };
