@@ -52,6 +52,22 @@ none of which needs a Mini App.
 one argument, and anything unrecognised becomes null rather than a best guess. Telegram allows 64
 bytes and a token address is 42 of them, which `src/bot/nav.test.ts` holds it to.
 
+## The eligibility notice, asked once
+
+The website decides eligibility from the request's country header. A webhook carries Telegram's
+datacenter instead, so that gate does not fail closed here, it silently passes: this bot cannot know
+where anyone is.
+
+So the sentence no longer trails every card. It appears where somebody is meeting the bot (`/start`,
+`/help`, an inline result landing in a chat that saw neither) and in front of a trade, as a question
+with a button. Confirming authorises nothing: the site checks the region again when the link is
+opened, from the user's own request, and refuses there if it must. What is stored is one expiring
+boolean under an opaque key, with no address, no name and no country in it.
+
+Without `UPSTASH_REDIS_REST_URL` the confirmation lives in process memory, so a cold instance asks
+again. That is mildly annoying and never wrong in the unsafe direction; configure the shared store
+if the repetition bothers people.
+
 ## The twenty second rule
 
 `StockPairHook` charges 9,900 basis points of the stock side at launch and decays linearly to 100
