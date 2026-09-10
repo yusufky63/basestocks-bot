@@ -52,6 +52,30 @@ none of which needs a Mini App.
 one argument, and anything unrecognised becomes null rather than a best guess. Telegram allows 64
 bytes and a token address is 42 of them, which `src/bot/nav.test.ts` holds it to.
 
+## Reading happens in Telegram, signing happens in the wallet
+
+The obvious design is a `web_app` button: render the site inside Telegram and let the wallet connect
+there. It was built, tested on a phone, and it does not work. Telegram's WebView has no injected
+provider, a passkey cannot open the popup it needs, and a WalletConnect round trip out to a wallet
+app returns to a session that no longer exists.
+
+So a trade goes the other way. The button opens [`/open`](src/app/open/page.tsx), one page on this
+service's own domain, which offers the jump into an app that already has a wallet:
+
+| Option | Why |
+| --- | --- |
+| **Base app** (`cbwallet://miniapp?url=…`) | BStocks is already built as a Base mini app, with the host wallet connected on arrival. This is the path the app was designed for, not a workaround |
+| **MetaMask** (`metamask.app.link/dapp/…`) | Its own browser, provider injected |
+| **This browser** | Works for an extension wallet or a passkey |
+
+The page exists because Telegram accepts only http(s) in a button, so a custom scheme cannot be the
+button. It offers a tap rather than redirecting, because a scheme jump without a gesture is blocked
+in some webviews and then silently does nothing.
+
+Read-only pages still open inside Telegram, where a WebView is fine. `/open` takes a path and offers
+to open it, so its allowlist is a security boundary rather than a convenience, and
+`src/lib/handoff.test.ts` treats it as one.
+
 ## The eligibility notice, asked once
 
 The website decides eligibility from the request's country header. A webhook carries Telegram's
