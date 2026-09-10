@@ -19,7 +19,7 @@ It holds no keys, no funds and no wallet library, and it cannot sign, approve or
 | `/open NVDA` | A link that opens that stock's trade panel |
 | `/dca 25 NVDA weekly` | A link that opens the plan wizard already filled in |
 | `/stats` | What has been done through the app, counted from verified receipts |
-| free text | The app's own assistant, in private chats, when `ASSISTANT_ENABLED` is set |
+| free text | The app's own assistant, in private chats. Say what you want in your own words and a drafted trade comes back as a button |
 | a pasted claim link | Explains what it is. A message containing a claim **key** is dropped unread |
 
 **Launchpad handle**
@@ -32,6 +32,25 @@ It holds no keys, no funds and no wallet library, and it cannot sign, approve or
 | `/launch Name SYM NVDA` | A prefilled create link. The pin and the signature stay with the user |
 
 Both handles answer inline queries (`@bot NVDA`), which work in chats the bot was never added to.
+
+## Nothing has to be typed
+
+A bot that only answers slash commands is a command line with a worse font. Three things fix that,
+none of which needs a Mini App.
+
+- **A persistent keyboard** replaces the phone keyboard in a private chat, so Markets, Stats and
+  Help are one thumb away. Labels map back to commands in `src/bot/nav.ts`, next to the labels.
+- **Inline buttons carry the next step.** A price card offers Buy and Sell, the markets table makes
+  every ticker tappable, a launchpad list makes every token tappable, and a tap edits the message
+  that was tapped rather than piling another one underneath it.
+- **Free text reaches the assistant with its drafts intact.** "buy fifty dollars of NVDA" comes back
+  as a button, because the endpoint returns a typed action whose address was resolved server-side
+  from validated tool input. This service never reads an address out of model output, and the button
+  opens a page rather than placing an order.
+
+`callback_data` is parsed as strictly as anything else arriving from a chat: a short verb, a colon,
+one argument, and anything unrecognised becomes null rather than a best guess. Telegram allows 64
+bytes and a token address is 42 of them, which `src/bot/nav.test.ts` holds it to.
 
 ## The twenty second rule
 

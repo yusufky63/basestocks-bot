@@ -633,10 +633,17 @@ async function assistantReply(tg: Telegram, message: TgMessage): Promise<Respons
     // Model output is data. It is escaped without exception, exactly like a headline or a token
     // name, and the only links in the reply are the ones `actionButtons` built from typed fields.
     const buttons = actionButtons(answer.actions);
+
+    // The assistant writes for the website, where a draft appears as a review card on screen. Here
+    // it is a button, and a reply that says "a review card is open" while nothing opened reads as a
+    // bug. One line closes the gap without rewriting what the model said.
+    const drafted = answer.actions.some((a) => a.kind !== "news");
+    const handoff = drafted ? `\n\n<i>${esc("Tap below to open it in the app. Nothing is signed until you confirm it in your own wallet.")}</i>` : "";
+
     await tg.sendMessage({
       chat_id: message.chat.id,
       message_thread_id: message.message_thread_id,
-      text: `${esc(answer.reply)}\n\n<i>${esc(COPY.bstocks.footer)}</i>`,
+      text: `${esc(answer.reply)}${handoff}\n\n<i>${esc(COPY.bstocks.footer)}</i>`,
       parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
       reply_markup: buttons.length > 0 ? { inline_keyboard: buttons } : undefined,
