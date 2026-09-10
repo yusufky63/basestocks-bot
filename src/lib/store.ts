@@ -14,6 +14,7 @@ interface Entry {
 }
 
 const memory = new Map<string, Entry>();
+const memoryText = new Map<string, { value: string; expiresAt: number }>();
 
 function nowSec(): number {
   return Math.floor(Date.now() / 1000);
@@ -85,6 +86,34 @@ export async function bump(key: string, ttlSec: number): Promise<number> {
   }
   memory.set(key, { value: 1, expiresAt: Date.now() + ttlSec * 1_000 });
   return 1;
+}
+
+/**
+ * Short-lived text, for the one thing that genuinely needs it: the last few turns of a
+ * conversation, so a follow-up like "make it fifty" has something to refer back to.
+ *
+ * This is the user's own conversation with the bot, kept for minutes, keyed by chat, and never
+ * written to a log or an error report. The claim-key filter runs before anything reaches here, so a
+ * gift key cannot end up stored. Without a shared store it lives in process memory and evaporates
+ * with the instance, which is the quieter of the two behaviours.
+ */
+export async function putText(key: string, value: string, ttlSec: number): Promise<void> {
+  const shared = await command(["SET", key, value, "EX", String(ttlSec)]);
+  if (shared !== null) return;
+  memoryText.set(key, { value, expiresAt: Date.now() + ttlSec * 1_000 });
+  if (memoryText.size > 512) {
+    const now = Date.now();
+    for (const [k, v] of memoryText) if (v.expiresAt <= now) memoryText.delete(k);
+  }
+}
+
+export async function getText(key: string): Promise<string | null> {
+  if (upstash()) {
+    const shared = await command(["GET", key]);
+    return typeof shared === "string" ? shared : null;
+  }
+  const hit = memoryText.get(key);
+  return hit && hit.expiresAt > Date.now() ? hit.value : null;
 }
 
 /**

@@ -115,3 +115,64 @@ const FILLABLE: TradingStatus[] = ["tradable", "thin"];
 export function isTradable(stock: V1Stock): boolean {
   return FILLABLE.includes(stock.status.code as TradingStatus) && !stock.transferPaused;
 }
+
+/* ------------------------------------------------------------------ *
+ * A wallet's own position
+ * ------------------------------------------------------------------ */
+
+export interface Holding {
+  address: string;
+  symbol: string;
+  shares: string;
+  decimals: number;
+  priceUsd: number | null;
+  priceSource: string;
+  valueUsd: number;
+  change24hPct: number | null;
+  weightBps: number;
+}
+
+export interface Portfolio {
+  owner: string;
+  totalValueUsd: number;
+  change24hPct: number | null;
+  usdc: { raw: string; valueUsd: number } | null;
+  earnValueUsd: number;
+  liquidityValueUsd: number;
+  holdings: Holding[];
+}
+
+/**
+ * Any wallet's tokenized-stock position, read from the chain.
+ *
+ * Public by design and public in fact: this endpoint takes an address in the path and needs no key,
+ * because every number in it is already on Base for anyone to read. That is what lets the bot show
+ * somebody their own holdings without ever asking them to prove anything, and it is also why the
+ * address a user gives the bot is a bookmark rather than a login.
+ */
+export async function readPortfolio(address: string): Promise<Portfolio | null> {
+  const body = await readJson<Envelope<Portfolio>>(
+    withQuery(env().BSTOCKS_URL, `/api/v1/portfolio/${address}`),
+    { revalidate: 15 },
+  );
+  return body?.data ?? null;
+}
+
+/** The name a wallet has chosen, when it has one. Cheap, cached, and never required. */
+export async function reverseBasename(address: string): Promise<string | null> {
+  const body = await readJson<{ name?: string | null }>(
+    withQuery(env().BSTOCKS_URL, "/api/basename/reverse", { address }),
+    { revalidate: 3_600 },
+  );
+  return body?.name ?? null;
+}
+
+/** `alice.base.eth` to an address. Returns null for anything that does not resolve. */
+export async function resolveBasename(name: string): Promise<string | null> {
+  const body = await readJson<{ resolved?: { address?: string } | null }>(
+    withQuery(env().BSTOCKS_URL, "/api/basename/resolve", { name }),
+    { revalidate: 3_600 },
+  );
+  const address = body?.resolved?.address;
+  return typeof address === "string" && /^0x[0-9a-fA-F]{40}$/.test(address) ? address : null;
+}

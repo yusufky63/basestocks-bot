@@ -3,20 +3,22 @@ import type { Surface } from "@/config/surfaces";
 import { env } from "@/config/env";
 import { Telegram, webhookAck, webhookReply, type SendMessageParams } from "@/lib/telegram/api";
 import type { TgChat, TgMessage, TgUpdate, TgUser } from "@/lib/telegram/types";
-import { b, esc } from "@/lib/telegram/html";
+import { b, code, esc } from "@/lib/telegram/html";
 import { LIMITS, meter } from "@/lib/rate-limit";
 import { claimOnce } from "@/lib/store";
-import { compactUsd, move, pad, usd } from "@/lib/format";
-import { automateLink, evenLegs, launchpadCreateLink, stockLink } from "@/lib/links";
-import { isTradable, listStocks, readStats, type V1Stock } from "@/services/bstocks";
+import { compactUsd, move, pad, shortAddress, usd } from "@/lib/format";
+import { automateLink, bstocksUrl, evenLegs, launchpadCreateLink, stockLink } from "@/lib/links";
+import { isTradable, listStocks, readPortfolio, readStats, reverseBasename, type V1Stock } from "@/services/bstocks";
 import { listMarkets, listLaunchStocks, readToken, type Market } from "@/services/launchpad";
 import { askAssistant } from "@/services/assistant";
-import { KEYBOARD_ALIASES, actionButtons, decode, encode, menuCard, replyKeyboard } from "./nav";
+import { KEYBOARD_ALIASES, actionButtons, decode, encode, menuCard, replyKeyboard, webAppOrUrl } from "./nav";
 import { confirmEligibility, eligibilityCard, hasConfirmed } from "./eligibility";
+import { appendTurns, clearHistory, loadHistory } from "./history";
+import { forgetWallet, getWallet, setWallet, toAddress } from "./wallet";
 import { COPY } from "./copy";
 import { CLAIM_HELP, KEY_WARNING, inspectForClaim } from "./claim";
 import { isAddress, resolveStock, splitTickers } from "./resolve";
-import { marketListCard, marketsCard, stockCard, tokenCard, type Card } from "./render";
+import { marketListCard, marketsCard, portfolioCard, stockCard, tokenCard, type Card } from "./render";
 
 export interface Ctx {
   surface: Surface;
@@ -110,6 +112,10 @@ export function parseCommand(text: string): { command: string; args: string } | 
 
 async function route(command: string, ctx: Ctx): Promise<Card | null> {
   const shared: Record<string, (c: Ctx) => Promise<Card> | Card> = {
+    reset: async (c) => {
+      await clearHistory(c.chat.id);
+      return { text: esc("Forgotten. We can start again."), preview: { is_disabled: true } };
+    },
     start: (c) => ({
       text: COPY[c.surface].start,
       preview: { is_disabled: true },
@@ -220,6 +226,103 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
    * `/api/v1/stats` returns several windows; 7d is the one worth a chat message, because 24h on a
    * young product is usually a row of zeros that reads as "nothing works" rather than "quiet day".
    */
+  /**
+   * Remembers an address so the portfolio card has something to read.
+   *
+   * Read-only, unverified, and said plainly to be so. Everything it shows is already public on
+   * Base, so a signature here would be friction protecting data that is not protected anywhere
+   * else. The day the bot can act on a wallet's behalf, this stops being enough.
+   */
+  wallet: async (ctx) => {
+    if (!ctx.isPrivate) {
+      return { text: esc("Wallets are a private-chat thing. Message me directly and we will set it up."), preview: { is_disabled: true } };
+    }
+    if (!ctx.from) return upstreamDown();
+
+    if (!ctx.args) {
+      const current = await getWallet(ctx.from.id);
+      if (!current) {
+        return {
+          text: [
+            b("Add a wallet"),
+            "",
+            esc("Send /wallet followed by your address or Basename, for example /wallet alice.base.eth"),
+            "",
+            esc("This is a bookmark, not a login. It lets me show you holdings that are already public on Base, it proves nothing, and it lets me do nothing on your behalf. /forget drops it."),
+          ].join("\n"),
+          preview: { is_disabled: true },
+        };
+      }
+      const name = await reverseBasename(current);
+      return {
+        text: [
+          b("Your wallet"),
+          "",
+          code(current),
+          ...(name ? [esc(name)] : []),
+          "",
+          esc("/portfolio shows what is in it. /forget drops it."),
+        ].join("\n"),
+        keyboard: [[{ text: "Portfolio", callback_data: encode({ kind: "portfolio" }) }]],
+        preview: { is_disabled: true },
+      };
+    }
+
+    const resolved = await toAddress(ctx.args);
+    if (!resolved) {
+      return { text: esc("That is not an address or a Basename. Try /wallet 0x... or /wallet alice.base.eth"), preview: { is_disabled: true } };
+    }
+    await setWallet(ctx.from.id, resolved.address);
+    return {
+      text: [
+        b("Saved"),
+        "",
+        code(resolved.address),
+        ...(resolved.name ? [esc(resolved.name)] : []),
+        "",
+        esc("A bookmark, not a login: it proves nothing and lets me do nothing on your behalf. /forget drops it."),
+      ].join("\n"),
+      keyboard: [[{ text: "Show my portfolio", callback_data: encode({ kind: "portfolio" }) }]],
+      preview: { is_disabled: true },
+    };
+  },
+
+  me: (ctx) => BSTOCKS_COMMANDS.portfolio!(ctx),
+
+  forget: async (ctx) => {
+    if (ctx.from) await forgetWallet(ctx.from.id);
+    return { text: esc("Dropped. I no longer have an address for you."), preview: { is_disabled: true } };
+  },
+
+  /** Holdings, value and the day's move, for a saved wallet or one typed inline. */
+  portfolio: async (ctx) => {
+    if (!ctx.isPrivate) {
+      return { text: esc("I never show anybody's holdings in a group. Message me directly."), preview: { is_disabled: true } };
+    }
+    const typed = ctx.args ? await toAddress(ctx.args) : null;
+    const address = typed?.address ?? (ctx.from ? await getWallet(ctx.from.id) : null);
+    if (!address) {
+      return {
+        text: [
+          b("No wallet yet"),
+          "",
+          esc("Tell me which one with /wallet 0x... or /wallet alice.base.eth, and I will remember it."),
+        ].join("\n"),
+        preview: { is_disabled: true },
+      };
+    }
+
+    const [portfolio, name] = await Promise.all([readPortfolio(address), reverseBasename(address)]);
+    if (!portfolio) return upstreamDown();
+
+    return portfolioCard(portfolio, name ?? shortAddress(address), [
+      [
+        { ...webAppOrUrl(bstocksUrl("/portfolio"), ctx.isPrivate), text: "Open portfolio" },
+        { text: "Markets", callback_data: encode({ kind: "markets" }) },
+      ],
+    ]);
+  },
+
   stats: async () => {
     const stats = await readStats();
     const window = stats?.windows?.["7d"];
@@ -330,8 +433,11 @@ async function stockHandoff(ctx: Ctx, side: "buy" | "sell"): Promise<Card> {
   return {
     text: lines.join("\n"),
     keyboard: [
+      // Inside Telegram in a private chat, a plain link in a group: Telegram refuses `web_app` on
+      // an inline keyboard anywhere else, and it refuses the whole message to say so.
+      [{ ...webAppOrUrl(href, ctx.isPrivate), text: `${verb} ${stock.symbol}` }],
       [
-        { text: `${verb} ${stock.symbol}`, url: href },
+        { text: "Price", callback_data: encode({ kind: "price", symbol: stock.symbol }) },
         { text: "Share", switch_inline_query_chosen_chat: { query: stock.symbol, allow_user_chats: true, allow_group_chats: true } },
       ],
     ],
@@ -634,7 +740,10 @@ async function assistantReply(tg: Telegram, message: TgMessage): Promise<Respons
   const question = (message.text ?? "").slice(0, 1_000);
   after(async () => {
     await tg.chatAction(message.chat.id, message.message_thread_id);
-    const answer = await askAssistant([{ role: "user", content: question }]);
+    // The assistant ends its own replies with "want me to adjust the size?", so it has to be able
+    // to hear the answer. Six turns, thirty minutes, keyed by chat.
+    const history = await loadHistory(message.chat.id);
+    const answer = await askAssistant([...history, { role: "user", content: question }]);
 
     if (answer.refusal) {
       await tg.sendMessage({
@@ -650,12 +759,14 @@ async function assistantReply(tg: Telegram, message: TgMessage): Promise<Respons
     // Model output is data. It is escaped without exception, exactly like a headline or a token
     // name, and the only links in the reply are the ones `actionButtons` built from typed fields.
     const buttons = actionButtons(answer.actions);
+    await appendTurns(message.chat.id, question, answer.reply);
 
     // The assistant writes for the website, where a draft appears as a review card on screen. Here
-    // it is a button, and a reply that says "a review card is open" while nothing opened reads as a
-    // bug. One line closes the gap without rewriting what the model said.
+    // it is a button, so one short line bridges its words to the thing below them. It deliberately
+    // does not repeat the signing caveat: the model already said it, and saying it twice in two
+    // slightly different ways reads as two different rules.
     const drafted = answer.actions.some((a) => a.kind !== "news");
-    const handoff = drafted ? `\n\n<i>${esc("Tap below to open it in the app. Nothing is signed until you confirm it in your own wallet.")}</i>` : "";
+    const handoff = drafted ? `\n\n<i>${esc("↓ The review card is the button below.")}</i>` : "";
 
     await tg.sendMessage({
       chat_id: message.chat.id,

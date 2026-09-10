@@ -2,7 +2,7 @@ import { b, code, esc, link } from "@/lib/telegram/html";
 import type { InlineKeyboardButton, ReplyKeyboard, SendMessageParams } from "@/lib/telegram/api";
 import { ago, compactUsd, move, pad, padStart, pct, shortAddress, usd } from "@/lib/format";
 import { stockLink, launchpadTokenLink, launchpadMarketsLink } from "@/lib/links";
-import type { V1Stock } from "@/services/bstocks";
+import type { Portfolio, V1Stock } from "@/services/bstocks";
 import { isTradable } from "@/services/bstocks";
 import { BASE_FEE_BPS, feeBpsAt, secondsUntilFairFee, type Market } from "@/services/launchpad";
 import { launchpadListButtons, marketButtons, stockButtons } from "./nav";
@@ -228,4 +228,59 @@ export function marketListCard(title: string, note: string, markets: Market[], n
     preview: { is_disabled: true },
     editable: true,
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * A wallet's own position
+ * ------------------------------------------------------------------ */
+
+/**
+ * Somebody's holdings, as a chat card.
+ *
+ * Ordered by value rather than by ticker, because the first three rows are the answer to "how am I
+ * doing" and the rest is detail. USDC, Earn and liquidity are shown separately from the stocks so
+ * the total is not a number nobody can reconstruct.
+ */
+export function portfolioCard(
+  portfolio: Portfolio,
+  label: string,
+  buttons: InlineKeyboardButton[][],
+): Card {
+  const holdings = [...portfolio.holdings].sort((a, b) => b.valueUsd - a.valueUsd);
+
+  const lines = [
+    b(label),
+    `${b(usd(portfolio.totalValueUsd))}  ${esc(move(portfolio.change24hPct))}`,
+  ];
+
+  if (holdings.length > 0) {
+    const rows = holdings
+      .map((h) => {
+        const shares = Number(h.shares) / 10 ** h.decimals;
+        return `${pad(h.symbol, 7)}${padStart(shares.toFixed(4), 11)}${padStart(usd(h.valueUsd), 10)}${padStart(h.change24hPct === null ? "—" : pct(h.change24hPct, 1), 8)}`;
+      })
+      .join("\n");
+    lines.push(
+      "",
+      `<pre>${esc(`${pad("", 7)}${padStart("shares", 11)}${padStart("value", 10)}${padStart("24h", 8)}`)}\n${esc(rows)}</pre>`,
+    );
+  } else {
+    lines.push("", esc("No tokenized stocks in this wallet yet."));
+  }
+
+  const side: [string, number][] = [
+    ["USDC", portfolio.usdc?.valueUsd ?? 0],
+    ["Earn", portfolio.earnValueUsd],
+    ["Liquidity", portfolio.liquidityValueUsd],
+  ];
+  const shown = side.filter(([, value]) => value > 0.005);
+  if (shown.length > 0) {
+    lines.push(`<pre>${shown.map(([k, v]) => `${esc(pad(k, 11))}${esc(usd(v))}`).join("\n")}</pre>`);
+  }
+
+  // Shares, not tokens: one token is not one share once a split or a dividend has moved the
+  // multiplier, and the API returns the scaled figure so nothing here has to guess.
+  lines.push(i0("Share-equivalents, already scaled by each stock's multiplier."));
+
+  return { text: lines.join("\n"), keyboard: buttons, preview: { is_disabled: true }, editable: true };
 }

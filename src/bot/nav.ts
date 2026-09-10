@@ -30,6 +30,7 @@ export type Action =
   | { kind: "help" }
   | { kind: "stats" }
   | { kind: "menu" }
+  | { kind: "portfolio" }
   | { kind: "price"; symbol: string }
   | { kind: "buy"; symbol: string }
   | { kind: "sell"; symbol: string }
@@ -52,6 +53,8 @@ export function encode(action: Action): string {
       return "st";
     case "menu":
       return "n";
+    case "portfolio":
+      return "pf";
     case "top":
       return "lt";
     case "new":
@@ -75,6 +78,7 @@ export function decode(data: string | undefined): Action | null {
   if (data === "h") return { kind: "help" };
   if (data === "st") return { kind: "stats" };
   if (data === "n") return { kind: "menu" };
+  if (data === "pf") return { kind: "portfolio" };
   if (data === "lt") return { kind: "top" };
   if (data === "ln") return { kind: "new" };
 
@@ -113,6 +117,7 @@ export function decode(data: string | undefined): Action | null {
 export const KEYBOARD_ALIASES: Record<string, { command: string; args: string }> = {
   "📈 Markets": { command: "markets", args: "" },
   "📊 Stats": { command: "stats", args: "" },
+  "💼 Portfolio": { command: "portfolio", args: "" },
   "🔥 Top": { command: "top", args: "" },
   "🆕 New": { command: "new", args: "" },
   "❓ Help": { command: "help", args: "" },
@@ -121,7 +126,7 @@ export const KEYBOARD_ALIASES: Record<string, { command: string; args: string }>
 export function replyKeyboard(surface: Surface): ReplyKeyboard {
   const rows =
     surface === "bstocks"
-      ? [[{ text: "📈 Markets" }, { text: "📊 Stats" }], [{ text: "❓ Help" }]]
+      ? [[{ text: "📈 Markets" }, { text: "💼 Portfolio" }], [{ text: "📊 Stats" }, { text: "❓ Help" }]]
       : [[{ text: "🔥 Top" }, { text: "🆕 New" }], [{ text: "❓ Help" }]];
   return {
     keyboard: rows,
@@ -135,6 +140,22 @@ export function replyKeyboard(surface: Surface): ReplyKeyboard {
 /* ------------------------------------------------------------------ *
  * Card buttons
  * ------------------------------------------------------------------ */
+
+/**
+ * Opens a page without leaving Telegram, where Telegram allows it.
+ *
+ * A `web_app` button renders the page inside Telegram: on a phone that is a WebView in the app, on
+ * desktop and web an iframe. The wallet connects there, the site runs its own eligibility check
+ * against the user's own request, and nobody is handed to a browser tab and lost.
+ *
+ * Two conditions. Telegram refuses `web_app` on an inline keyboard outside a private chat, so a
+ * group gets a plain link. And the site has to allow being framed, which for the web and desktop
+ * clients means naming `web.telegram.org` in its `frame-ancestors`; a phone does not care because a
+ * WebView is not a frame.
+ */
+export function webAppOrUrl(url: string, isPrivate: boolean): InlineKeyboardButton {
+  return isPrivate ? { text: "", web_app: { url } } : { text: "", url };
+}
 
 /** Under a price card: the two things somebody reading a price wants next. */
 export function stockButtons(symbol: string, address: string, tradable: boolean): InlineKeyboardButton[][] {

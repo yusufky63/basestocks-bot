@@ -5,6 +5,14 @@
       "description": "Buttons instead of commands"
     },
     {
+      "command": "portfolio",
+      "description": "Your holdings, value and today's move"
+    },
+    {
+      "command": "wallet",
+      "description": "Tell me which wallet is yours"
+    },
+    {
       "command": "price",
       "description": "Price, reference and liquidity for one stock"
     },
@@ -27,6 +35,14 @@
     {
       "command": "stats",
       "description": "Verified platform activity"
+    },
+    {
+      "command": "forget",
+      "description": "Drop the wallet I have for you"
+    },
+    {
+      "command": "reset",
+      "description": "Forget the conversation so far"
     },
     {
       "command": "help",
@@ -65,6 +81,10 @@
     {
       "command": "launch",
       "description": "Prefilled link to the create form"
+    },
+    {
+      "command": "reset",
+      "description": "Forget the conversation so far"
     },
     {
       "command": "help",

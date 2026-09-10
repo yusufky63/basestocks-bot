@@ -23,6 +23,14 @@ export interface InlineKeyboardButton {
   url?: string;
   /** At most 64 bytes. Everything this bot encodes is a short verb plus a symbol or an address. */
   callback_data?: string;
+  /**
+   * Opens the page inside Telegram instead of handing the person to a browser.
+   *
+   * Telegram only accepts this on an inline keyboard in a **private chat**; in a group the same
+   * button has to be a plain `url` or the whole message is rejected. `webAppOrUrl` in
+   * `src/bot/nav.ts` is the one place that decision is made.
+   */
+  web_app?: { url: string };
   /** Opens a chat picker with the query prefilled. The one field that teaches people inline mode. */
   switch_inline_query_chosen_chat?: {
     query: string;
