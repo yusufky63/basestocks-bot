@@ -76,29 +76,6 @@ export async function readNews(opts: { symbol?: string; scope?: "ecosystem" | "m
 }
 
 /* ------------------------------------------------------------------ *
- * Status
- * ------------------------------------------------------------------ */
-
-export interface StatusCheck {
-  id: string;
-  group: string;
-  name: string;
-  status: "ok" | "degraded" | "down" | string;
-  latencyMs?: number;
-  detail?: string;
-}
-
-export interface StatusReport {
-  overall: string;
-  checks: StatusCheck[];
-  generatedAt?: number;
-}
-
-export async function readStatus(): Promise<StatusReport | null> {
-  return readJson<StatusReport>(withQuery(env().BSTOCKS_URL, "/api/status"), { revalidate: 60 });
-}
-
-/* ------------------------------------------------------------------ *
  * Templates
  * ------------------------------------------------------------------ */
 

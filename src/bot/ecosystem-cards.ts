@@ -2,7 +2,7 @@ import { b, esc, link } from "@/lib/telegram/html";
 import { ago, compactUsd, pad, padStart, pct } from "@/lib/format";
 import { bstocksUrl } from "@/lib/links";
 import type { Card } from "./render";
-import type { EarnView, Headline, PoolEntry, StatusReport, Template } from "@/services/ecosystem";
+import type { EarnView, Headline, PoolEntry, Template } from "@/services/ecosystem";
 import { encode, signButton } from "./nav";
 import { ELIGIBILITY_NOTE } from "./copy";
 import { env } from "@/config/env";
@@ -81,47 +81,6 @@ export function newsCard(items: Headline[], label: string): Card {
     editable: true,
   };
 }
-
-/* ------------------------------------------------------------------ *
- * Status
- * ------------------------------------------------------------------ */
-
-const MARK: Record<string, string> = { ok: "✅", degraded: "⚠️", down: "❌" };
-
-export function statusCard(report: StatusReport): Card {
-  const bad = report.checks.filter((c) => c.status !== "ok");
-  const groups = new Map<string, typeof report.checks>();
-  for (const check of report.checks) {
-    const list = groups.get(check.group) ?? [];
-    list.push(check);
-    groups.set(check.group, list);
-  }
-
-  const lines = [
-    `${MARK[report.overall] ?? "•"} ${b(report.overall === "ok" ? "All systems normal" : `Service ${report.overall}`)}`,
-  ];
-
-  if (bad.length > 0) {
-    // Only what is wrong, in full. A wall of green ticks is what the site is for.
-    lines.push("", ...bad.map((c) => `${MARK[c.status] ?? "•"} ${b(c.name)}\n${i0(c.detail ?? c.status)}`));
-  } else {
-    lines.push(
-      "",
-      `<pre>${[...groups.entries()].map(([group, checks]) => `${esc(pad(group, 18))}${checks.length} ok`).join("\n")}</pre>`,
-    );
-  }
-
-  return {
-    text: [...lines, "", i0("Live checks of the chain, price feeds, routes, yield venues and storage the app depends on.")].join("\n"),
-    keyboard: [[{ text: "Status page", url: bstocksUrl("/status") }]],
-    preview: { is_disabled: true },
-    editable: true,
-  };
-}
-
-/* ------------------------------------------------------------------ *
- * Templates
- * ------------------------------------------------------------------ */
 
 export function templatesCard(templates: Template[], symbolOf: (address: string) => string | null): Card {
   if (templates.length === 0) return { text: esc("No templates right now."), preview: { is_disabled: true } };
@@ -229,8 +188,6 @@ export function helpCard(): Card {
       "",
       section("Everything else", [
         ["/pools", "open gift pools"],
-        ["/stats", "verified activity"],
-        ["/status", "what is up and what is not"],
         ["/reset", "forget our conversation"],
         ["/settings", "manage saved data"],
         ["/cancel", "leave an input step"],

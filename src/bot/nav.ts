@@ -35,7 +35,6 @@ export type Action =
   | { kind: "watch" | "unwatch"; symbol: string }
   | { kind: "plan"; symbol: string; amount?: number; days?: number }
   | { kind: "help" }
-  | { kind: "stats" }
   | { kind: "menu" }
   | { kind: "portfolio"; address?: string }
   | { kind: "pools" }
@@ -64,8 +63,6 @@ export function encode(action: Action): string {
     case "plan": return `d:${action.symbol}${action.amount !== undefined ? `:${action.amount}` : ""}${action.days !== undefined ? `:${action.days}` : ""}`;
     case "help":
       return "h";
-    case "stats":
-      return "st";
     case "menu":
       return "n";
     case "portfolio":
@@ -102,7 +99,6 @@ export function decode(data: string | undefined): Action | null {
   if (plan) return { kind: "plan", symbol: plan[1]!, ...(plan[2] ? { amount: Number(plan[2]) } : {}), ...(plan[3] ? { days: Number(plan[3]) } : {}) };
   if (data === "m") return { kind: "markets" };
   if (data === "h") return { kind: "help" };
-  if (data === "st") return { kind: "stats" };
   if (data === "n") return { kind: "menu" };
   if (data === "pf") return { kind: "portfolio" };
   if (data === "pl") return { kind: "pools" };
@@ -151,7 +147,6 @@ export const KEYBOARD_ALIASES: Record<string, { command: string; args: string }>
   "📰 News": { command: "news", args: "" },
   "🔎 Search": { command: "search", args: "" },
   "📈 Markets": { command: "markets", args: "" },
-  "📊 Stats": { command: "stats", args: "" },
   "💼 Portfolio": { command: "portfolio", args: "" },
   "🔥 Top": { command: "top", args: "" },
   "🆕 New": { command: "new", args: "" },

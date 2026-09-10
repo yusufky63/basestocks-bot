@@ -10,8 +10,8 @@ Reviewed against the sibling `C:\Projeler\base-stocks` source and official Teleg
 | Portfolio | `/api/v1/portfolio/:address` | `data.holdings`, scaled `shares`, `decimals`, USDC, Earn and liquidity |
 | Wallet names | `/api/basename/resolve`, `/api/basename/reverse` | `resolved.address` and `name`; unresolved input is not another wallet |
 | Activity | `/api/activity/:address` | `items`, Unix-second timestamps, receipt verification and transaction hashes |
-| News, Earn, stats | `/api/v1/news`, `/api/v1/earn`, `/api/v1/stats` | Public envelopes used by the existing clients |
-| Templates, pools, status | `/api/templates`, `/api/pools`, `/api/status` | App read routes; expired, closed and exhausted pools are omitted |
+| News, Earn | `/api/v1/news`, `/api/v1/earn` | Public envelopes used by the existing clients |
+| Templates, pools | `/api/templates`, `/api/pools` | App read routes; expired, closed and exhausted pools are omitted |
 | Buy / sell | `/stocks/:address?trade=buy` or `sell` | Existing stock panel query |
 | Recurring plan | `/automate?legs=address:bps,...&usd=25&cadence=7&name=...` | `AutomateView`, `parseAutomateLegs`, 12-leg maximum and $1 per-leg minimum |
 | Baskets, gifts, Earn | `/build/:template`, `/gifts`, `/pools/:id`, `/earn` | Existing pages, opened through the wallet handoff |

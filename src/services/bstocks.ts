@@ -14,7 +14,6 @@ import { z } from "zod";
  */
 const V1_CACHE = {
   stocks: 30,
-  stats: 300,
 } as const;
 
 export interface V1Reference {
@@ -64,30 +63,6 @@ export async function listStocks(): Promise<V1Stock[]> {
   );
   const stocks = body?.data?.stocks;
   return Array.isArray(stocks) ? stocks : [];
-}
-
-/** A window of counted activity. Every figure is counted only from a record matched to its receipt. */
-export interface StatsWindow {
-  trades?: number;
-  wallets?: number;
-  tradeVolumeUsd?: number;
-  planRuns?: number;
-  linksCreated?: number;
-  linksClaimed?: number;
-  poolClaims?: number;
-  earnDeposits?: number;
-}
-
-export interface V1Stats {
-  generatedAt?: number;
-  windows?: Partial<Record<"24h" | "7d" | "30d" | "all", StatsWindow>>;
-}
-
-export async function readStats(): Promise<V1Stats | null> {
-  const body = await readJson<Envelope<V1Stats>>(withQuery(env().BSTOCKS_URL, "/api/v1/stats"), {
-    revalidate: V1_CACHE.stats,
-  });
-  return body?.data ?? null;
 }
 
 export interface HealthReport {

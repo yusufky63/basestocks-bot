@@ -96,7 +96,6 @@ export const COPY: Record<Surface, SurfaceCopy> = {
       "/wallet &lt;address or Basename&gt; and /portfolio — your holdings, value, USDC, Earn and liquidity. A bookmark, not a login: everything it shows is already public on Base, it proves nothing and it lets me do nothing on your behalf. /forget drops it",
       "/buy &lt;ticker&gt; and /sell &lt;ticker&gt; — a link that opens that stock's trade panel on the right side. I only build the link; the quote, the eligibility check and the signature all happen in the app, on your own request",
       "/dca &lt;usd&gt; &lt;ticker[,ticker]&gt; &lt;weekly|monthly&gt; — a link that opens the plan wizard already filled in",
-      "/stats — what has been done through the app, counted from verified receipts",
       "",
       "In a group, mention the bot or reply to it. Personal answers only happen in a private chat.",
       "",

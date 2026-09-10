@@ -13,7 +13,6 @@ describe("callback data", () => {
   const cases: Action[] = [
     { kind: "markets" },
     { kind: "help" },
-    { kind: "stats" },
     { kind: "menu" },
     { kind: "top" },
     { kind: "new" },

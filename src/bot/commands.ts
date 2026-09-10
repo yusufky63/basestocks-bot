@@ -6,9 +6,9 @@ import type { TgChat, TgMessage, TgUpdate, TgUser } from "@/lib/telegram/types";
 import { b, code, esc } from "@/lib/telegram/html";
 import { LIMITS, meter } from "@/lib/rate-limit";
 import { claimOnce } from "@/lib/store";
-import { compactUsd, move, pad, shortAddress, usd } from "@/lib/format";
+import { move, shortAddress, usd } from "@/lib/format";
 import { automateLink, evenLegs, launchpadCreateLink, stockLink } from "@/lib/links";
-import { isTradable, listStocks, readActivity, readPortfolio, readStats, reverseBasename, type V1Stock } from "@/services/bstocks";
+import { isTradable, listStocks, readActivity, readPortfolio, reverseBasename, type V1Stock } from "@/services/bstocks";
 import { listMarkets, listLaunchStocks, readToken, type Market } from "@/services/launchpad";
 import { askAssistant } from "@/services/assistant";
 import { KEYBOARD_ALIASES, actionButtons, decode, encode, menuCard, replyKeyboard, signButton } from "./nav";
@@ -23,8 +23,8 @@ import { clearWatchlist, getPrompt, getWatchlist, setPrompt, updateWatchlist } f
 import { activityCard, watchlistCard } from "./personal-cards";
 import { planCard } from "./plan";
 import { marketListCard, marketsCard, portfolioCard, stockCard, tokenCard, type Card } from "./render";
-import { earnCard, helpCard, newsCard, poolsCard, statusCard, templatesCard } from "./ecosystem-cards";
-import { readEarn, readNews, readPools, readStatus, readTemplates } from "@/services/ecosystem";
+import { earnCard, helpCard, newsCard, poolsCard, templatesCard } from "./ecosystem-cards";
+import { readEarn, readNews, readPools, readTemplates } from "@/services/ecosystem";
 import registration from "@/lib/telegram/registration.json";
 
 const PERSONAL_COMMANDS = new Set(registration.personalCommands);
@@ -339,12 +339,6 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
   },
 
   /**
-   * Counted activity, over the window the app itself publishes.
-   *
-   * `/api/v1/stats` returns several windows; 7d is the one worth a chat message, because 24h on a
-   * young product is usually a row of zeros that reads as "nothing works" rather than "quiet day".
-   */
-  /**
    * Remembers an address so the portfolio card has something to read.
    *
    * Read-only, unverified, and said plainly to be so. Everything it shows is already public on
@@ -450,11 +444,6 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     return newsCard(await readNews({ symbol: stock.symbol }), `${stock.symbol} headlines`);
   },
 
-  status: async () => {
-    const report = await readStatus();
-    return report ? statusCard(report) : upstreamDown();
-  },
-
   baskets: async () => {
     const [templates, stocks] = await Promise.all([readTemplates(), listStocks()]);
     if (templates.length === 0) return upstreamDown();
@@ -484,38 +473,12 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     };
   },
 
-  stats: async () => {
-    const stats = await readStats();
-    const window = stats?.windows?.["7d"];
-    if (!window) return upstreamDown();
-    const rows: [string, string][] = [
-      ["Trades", numberOr(window.trades)],
-      ["Volume", window.tradeVolumeUsd === undefined ? "—" : compactUsd(window.tradeVolumeUsd)],
-      ["Wallets", numberOr(window.wallets)],
-      ["Plan runs", numberOr(window.planRuns)],
-      ["Gift links", numberOr(window.linksCreated)],
-      ["Claimed", numberOr((window.linksClaimed ?? 0) + (window.poolClaims ?? 0))],
-    ].filter(([, value]) => value !== "—") as [string, string][];
-
-    return {
-      text: [
-        b("Last seven days"),
-        `<pre>${rows.map(([k, v]) => `${esc(pad(k, 11))}${esc(v)}`).join("\n")}</pre>`,
-        `<i>${esc("Every figure is counted only after the app matched the record to its receipt on Base.")}</i>`,
-      ].join("\n"),
-      preview: { is_disabled: true },
-    };
-  },
 };
 
 /** Addresses to tickers, for the cards that hold an allocation or a pool leg rather than a stock. */
 function symbolLookup(stocks: V1Stock[]): (address: string) => string | null {
   const map = new Map(stocks.map((s) => [s.address.toLowerCase(), s.symbol]));
   return (address: string) => map.get(address.toLowerCase()) ?? null;
-}
-
-function numberOr(value: number | undefined): string {
-  return typeof value === "number" ? value.toLocaleString("en-US") : "—";
 }
 
 async function changeWatch(ctx: Ctx, add: boolean): Promise<Card> {
@@ -998,12 +961,12 @@ async function handleCallback(surface: Surface, tg: Telegram, update: TgUpdate):
     return webhookAck();
   }
 
-  const publicKinds = new Set(["markets", "price", "buy", "sell", "news", "help", "menu", "stats", "status", "earn", "baskets", "gift", "pools", "top", "new", "token", "confirm", "dca", "plan", "cancel"]);
+  const publicKinds = new Set(["markets", "price", "buy", "sell", "news", "help", "menu", "earn", "baskets", "gift", "pools", "top", "new", "token", "confirm", "dca", "plan", "cancel"]);
   if (!message && !publicKinds.has(action.kind)) {
     await tg.answerCallback(query.id, UI.privateOnly);
     return webhookAck();
   }
-  const bstocksOnly = new Set(["price", "markets", "news", "stats", "status", "earn", "baskets", "gift", "pools", "dca", "plan", "watch", "unwatch", "watchlist", "portfolio", "wallet", "activity", "settings"]);
+  const bstocksOnly = new Set(["price", "markets", "news", "earn", "baskets", "gift", "pools", "dca", "plan", "watch", "unwatch", "watchlist", "portfolio", "wallet", "activity", "settings"]);
   if ((surface === "launchpad" && bstocksOnly.has(action.kind)) || (surface === "bstocks" && ["top", "new", "token"].includes(action.kind))) {
     await tg.answerCallback(query.id, UI.callbackUnavailable);
     return webhookAck();
