@@ -15,12 +15,21 @@ It holds no keys, no funds and no wallet library, and it cannot sign, approve or
 | Command | Answers with |
 | --- | --- |
 | `/price NVDA` | DEX price, the Chainlink reference with its freshness, liquidity, 24h volume, trading status, and the multiplier when one token is no longer one share |
-| `/markets` | Every listed stock by 24h move, liquidity beside each row |
-| `/open NVDA` | A link that opens that stock's trade panel |
+| `/markets` | Every listed stock by 24h move, each ticker tappable |
+| `/wallet`, `/portfolio` | Holdings, value, USDC, Earn and liquidity for a wallet you name |
+| `/buy`, `/sell` | Opens the trade panel in an app that has a wallet. See below |
 | `/dca 25 NVDA weekly` | A link that opens the plan wizard already filled in |
-| `/stats` | What has been done through the app, counted from verified receipts |
-| free text | The app's own assistant, in private chats. Say what you want in your own words and a drafted trade comes back as a button |
+| `/baskets` | Starter templates, with the mix spelled out |
+| `/earn` | Where idle USDC earns, with the venues that did not answer named |
+| `/news NVDA` | Headlines for one stock or the ecosystem. Titles and links only |
+| `/gift`, `/pools` | Gifting and open gift pools |
+| `/stats`, `/status` | Verified activity, and what is up |
+| free text | The app's own assistant. Say what you want and a drafted trade comes back as a button |
 | a pasted claim link | Explains what it is. A message containing a claim **key** is dropped unread |
+
+Deep links open the bot on the thing a link was about rather than on a greeting:
+`t.me/<bot>?start=stock_NVDA`, `buy_TSLA`, `token_0x…`, `wallet_0x…`. Anything else, including the
+`src_*` attribution tags, falls through to the welcome.
 
 **Launchpad handle**
 
