@@ -38,8 +38,11 @@ export function OpenChoices({ target, label }: { target: string; label: string }
   }, []);
 
   /**
-   * An http link, on the other hand, must go through `openLink` when Telegram is hosting: a plain
-   * navigation would replace the Mini App with the page and strand the user with no way back.
+   * Every choice is an ordinary https link, and inside Telegram each has to go through `openLink`.
+   *
+   * A plain navigation would replace the Mini App with the page and strand the person with no way
+   * back; `openLink` opens it outside and leaves the Mini App where it was, which is also what lets
+   * the operating system route a universal link to the wallet app instead of a browser tab.
    */
   const openHttp = (event: React.MouseEvent<HTMLAnchorElement>, url: string) => {
     const tg = window.Telegram?.WebApp;
@@ -52,11 +55,11 @@ export function OpenChoices({ target, label }: { target: string; label: string }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "22px 0" }}>
-      <a href={baseAppLink(target)} style={primary}>
+      <a href={baseAppLink(target)} onClick={(event) => openHttp(event, baseAppLink(target))} style={primary}>
         Open in Base app
         <span style={hint}>Use the wallet in your Base app.</span>
       </a>
-      <a href={metaMaskLink(target)} style={secondary}>
+      <a href={metaMaskLink(target)} onClick={(event) => openHttp(event, metaMaskLink(target))} style={secondary}>
         Open in MetaMask
         <span style={hint}>Uses MetaMask&apos;s own browser.</span>
       </a>
@@ -79,7 +82,10 @@ export function OpenChoices({ target, label }: { target: string; label: string }
 
 /** Kept in the client bundle so the handlers can build them without another round trip. */
 function baseAppLink(target: string): string {
-  return `cbwallet://miniapp?url=${encodeURIComponent(target)}`;
+  // Coinbase's universal link, not the `cbwallet://` scheme: a Mini App container refuses to
+  // navigate to an arbitrary scheme and a desktop browser has no handler for one, so both used to
+  // answer a tap with a scheme error. See src/lib/handoff.ts for the whole reason.
+  return `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(target)}`;
 }
 
 function metaMaskLink(target: string): string {

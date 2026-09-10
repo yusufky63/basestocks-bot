@@ -49,11 +49,23 @@ describe("destination", () => {
 });
 
 describe("wallet links", () => {
-  it("opens inside the Base app, with the destination encoded rather than concatenated", () => {
+  /**
+   * A universal link, never a custom scheme. `cbwallet://` was here first and answered a tap with a
+   * scheme error in the two places this page is actually opened: a Telegram Mini App container will
+   * not navigate to an arbitrary scheme, and a desktop browser has no handler for one.
+   */
+  it("opens the Base app through an https universal link, not a scheme", () => {
     const link = baseAppLink("https://basestocks.finance/stocks/0xabc?trade=buy");
-    expect(link.startsWith("cbwallet://miniapp?url=")).toBe(true);
+    expect(link.startsWith("https://go.cb-w.com/dapp?cb_url=")).toBe(true);
     // The `?` and `=` of the inner URL must not read as parameters of the outer one.
     expect(link).toContain("%3Ftrade%3Dbuy");
+  });
+
+  it("offers nothing a browser or a Mini App cannot follow", () => {
+    const target = "https://basestocks.finance/markets";
+    for (const link of [baseAppLink(target), metaMaskLink(target)]) {
+      expect(link.startsWith("https://")).toBe(true);
+    }
   });
 
   it("hands MetaMask a bare host and path, which is the shape its universal link takes", () => {

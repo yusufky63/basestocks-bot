@@ -9,7 +9,7 @@ import { env } from "@/config/env";
  * session. It looks like it should work and it does not.
  *
  * The reliable move is the opposite: do not bring the wallet to the page, take the page to the
- * wallet. Base's own docs give the mechanism, `cbwallet://miniapp?url=…`, which opens a URL inside
+ * wallet. Coinbase's universal link, `https://go.cb-w.com/dapp?cb_url=…`, opens a URL inside
  * the Base app where the wallet is native and already connected. BStocks is already built as a Base
  * mini app, so this is not a workaround, it is the path the app was designed for.
  *
@@ -61,9 +61,19 @@ export function handoffUrl(app: App, path: string, label?: string): string {
   return url.toString();
 }
 
-/** Opens the destination inside the Base app, where the wallet is native. */
+/**
+ * Opens the destination in the Base app, using Coinbase's documented universal link.
+ *
+ * The custom scheme `cbwallet://` was here first and it was wrong. A Telegram Mini App runs in a
+ * container that refuses to navigate to an arbitrary scheme, and a desktop browser has no handler
+ * for one either, so both answered a tap with a scheme error rather than opening anything.
+ *
+ * A universal link is an ordinary https URL, which every one of those surfaces will follow, and
+ * which the operating system hands to the Base app when it is installed. `cb_url` is
+ * percent-encoded so the destination's own query survives being carried inside another one.
+ */
 export function baseAppLink(target: string): string {
-  return `cbwallet://miniapp?url=${encodeURIComponent(target)}`;
+  return `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(target)}`;
 }
 
 /**
