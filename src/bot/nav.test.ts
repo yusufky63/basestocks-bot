@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KEYBOARD_ALIASES, actionButtons, decode, encode, marketButtons, replyKeyboard, stockButtons } from "./nav";
+import { KEYBOARD_ALIASES, actionButtons, decode, encode, marketButtons, replyKeyboard, signButton, stockButtons } from "./nav";
 import type { Action } from "./nav";
 
 /**
@@ -99,6 +99,25 @@ describe("card buttons", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveLength(3);
     expect(rows[1]).toHaveLength(1);
+  });
+});
+
+describe("signButton", () => {
+  /**
+   * Telegram rejects the whole message when a `web_app` button appears on an inline keyboard
+   * outside a private chat, and an inline query result is never in a private chat. So the form that
+   * works everywhere has to be the default, and the nicer one has to be asked for.
+   */
+  it("defaults to a plain link, which is legal in every chat type", () => {
+    const button = signButton("Buy NVDA", "bstocks", "/markets", "Buy NVDA");
+    expect(button.web_app).toBeUndefined();
+    expect(button.url).toContain("/open");
+  });
+
+  it("opens as a Mini App only when the caller says the chat is private", () => {
+    const button = signButton("Buy NVDA", "bstocks", "/markets", "Buy NVDA", true);
+    expect(button.web_app?.url).toContain("/open");
+    expect(button.url).toBeUndefined();
   });
 });
 

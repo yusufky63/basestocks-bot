@@ -168,8 +168,20 @@ export function webAppOrUrl(url: string, isPrivate: boolean): InlineKeyboardButt
  *
  * The rule, stated once: reading happens inside Telegram, signing happens in the wallet.
  */
-export function signButton(text: string, app: App, path: string, label: string): InlineKeyboardButton {
-  return { text, url: handoffUrl(app, path, label) };
+export function signButton(
+  text: string,
+  app: App,
+  path: string,
+  label: string,
+  // Defaults to the form that works everywhere. Telegram refuses `web_app` on an inline keyboard
+  // outside a private chat and rejects the whole message to say so, and an inline query result is
+  // never in a private chat, so the safe value has to be the default and the nice one opt-in.
+  isPrivate = false,
+): InlineKeyboardButton {
+  const url = handoffUrl(app, path, label);
+  // In a private chat it opens as a Mini App, keeping Telegram's header, close button and theme
+  // rather than reading as being dumped into a browser.
+  return isPrivate ? { text, web_app: { url } } : { text, url };
 }
 
 /** Under a price card: the two things somebody reading a price wants next. */

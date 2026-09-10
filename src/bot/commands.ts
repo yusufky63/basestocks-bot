@@ -436,7 +436,7 @@ async function stockHandoff(ctx: Ctx, side: "buy" | "sell"): Promise<Card> {
     keyboard: [
       // Out to a wallet, never into Telegram's own browser: that WebView has no provider to sign
       // with, which is the whole reason `/open` exists.
-      [signButton(`${verb} ${stock.symbol}`, "bstocks", `/stocks/${stock.address}?trade=${side}`, `${verb} ${stock.symbol}`)],
+      [signButton(`${verb} ${stock.symbol}`, "bstocks", `/stocks/${stock.address}?trade=${side}`, `${verb} ${stock.symbol}`, ctx.isPrivate)],
       [
         { text: "Price", callback_data: encode({ kind: "price", symbol: stock.symbol }) },
         { text: "Share", switch_inline_query_chosen_chat: { query: stock.symbol, allow_user_chats: true, allow_group_chats: true } },
@@ -489,7 +489,7 @@ const LAUNCHPAD_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     if (!market) {
       return { text: esc(`No token matched "${ctx.args}". /search finds one by name or symbol.`), preview: { is_disabled: true } };
     }
-    return tokenCard(market);
+    return tokenCard(market, Date.now(), undefined, ctx.isPrivate);
   },
 
   buy: (ctx) => tokenHandoff(ctx, "buy"),
@@ -499,7 +499,7 @@ const LAUNCHPAD_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     if (!ctx.args) return { text: esc("Search for what? Try /search doge"), preview: { is_disabled: true } };
     const page = await listMarkets({ q: ctx.args.slice(0, 64), limit: 10, orderBy: "volume24h" });
     if (!page) return upstreamDown();
-    if (page.markets.length === 1 && page.markets[0]) return tokenCard(page.markets[0]);
+    if (page.markets.length === 1 && page.markets[0]) return tokenCard(page.markets[0], Date.now(), undefined, ctx.isPrivate);
     return marketListCard(`Matches for "${ctx.args.slice(0, 32)}"`, "Best match by 24h volume first.", page.markets);
   },
 
@@ -601,7 +601,7 @@ async function tokenHandoff(ctx: Ctx, side: "buy" | "sell"): Promise<Card> {
       `${side === "buy" ? "Buy" : "Sell"} ${market.symbol}`,
     );
   }
-  return tokenCard(market, Date.now(), side);
+  return tokenCard(market, Date.now(), side, ctx.isPrivate);
 }
 
 function clampCount(args: string, fallback: number): number {
