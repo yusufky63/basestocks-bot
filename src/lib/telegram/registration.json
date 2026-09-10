@@ -1,0 +1,9 @@
+{
+  "allowedUpdates": [
+    "message",
+    "edited_message",
+    "inline_query",
+    "callback_query",
+    "my_chat_member"
+  ]
+}

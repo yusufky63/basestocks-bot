@@ -26,11 +26,11 @@ const SURFACES = {
 };
 
 /**
- * Telegram delivers a default set that silently omits `chat_member`, `message_reaction` and
- * `message_reaction_count`. Anything that ever needs one has to name it here, so the list is
- * explicit even where it matches the default.
+ * Read from the same file the app's own type does, because this list was duplicated once and the
+ * copy here kept registering the old set after `callback_query` was added: every button would have
+ * done nothing, silently.
  */
-const ALLOWED_UPDATES = ["message", "edited_message", "inline_query", "my_chat_member"];
+const ALLOWED_UPDATES = JSON.parse(readFileSync(resolve(ROOT, "src/lib/telegram/registration.json"), "utf8")).allowedUpdates;
 
 function loadEnv() {
   const env = { ...process.env };

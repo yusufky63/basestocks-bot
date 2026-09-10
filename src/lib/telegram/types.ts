@@ -1,4 +1,5 @@
 import { z } from "zod";
+import registration from "./registration.json";
 
 /**
  * The slice of Telegram's Update object this bot actually reads, validated rather than trusted.
@@ -79,13 +80,12 @@ export type TgUpdate = z.infer<typeof updateSchema>;
  * What `setWebhook` must be told to deliver.
  *
  * Telegram's default list silently omits `chat_member`, `message_reaction` and
- * `message_reaction_count`; anything that depends on them has to name them here. `my_chat_member`
- * is in the default set and is what tells the bot it was added to or removed from a group.
+ * `message_reaction_count`; anything that depends on one has to name it. `my_chat_member` is in the
+ * default set and is what tells the bot it was added to or removed from a group.
+ *
+ * The list lives in `registration.json` because the registration script is plain JavaScript and
+ * cannot import TypeScript. It was duplicated once, and the copy in the script silently kept
+ * delivering the old set after `callback_query` was added here: every button in the app would have
+ * done nothing, with no error anywhere to explain why.
  */
-export const ALLOWED_UPDATES = [
-  "message",
-  "edited_message",
-  "inline_query",
-  "callback_query",
-  "my_chat_member",
-] as const;
+export const ALLOWED_UPDATES = registration.allowedUpdates;
