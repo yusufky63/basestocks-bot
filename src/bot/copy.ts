@@ -68,15 +68,21 @@ export const COPY: Record<Surface, SurfaceCopy> = {
     start: [
       "<b>BaseStocks</b>",
       "",
-      "Live prices for Coinbase Tokenized Stocks on Base, and a link into the app whenever you want to act.",
+      // The assistant was built, deployed and working while /start listed six slash commands and
+      // never mentioned it. People read a command list and learn there is a command list; nobody
+      // types a sentence at something that has only ever shown them syntax. So the sentence comes
+      // first and the commands come last.
+      "Ask me anything about Coinbase Tokenized Stocks on Base. I read live prices, the news and, "
+        + "once you tell me your wallet, what is in it. Say what you want done and I draft it for "
+        + "you to sign in your own wallet.",
       "",
-      "<b>Try</b>",
-      "/price NVDA — price, reference and liquidity",
-      "/markets — every listed stock by 24h move",
-      "/wallet alice.base.eth — tell me which wallet is yours",
-      "/portfolio — what is in it, and today's move",
-      "/buy NVDA — open the trade panel, ready to buy",
-      "/dca 25 NVDA weekly — build a recurring plan link",
+      "<b>Try saying</b>",
+      "<i>what moved today</i>",
+      "<i>buy fifty dollars of NVDA</i>",
+      "<i>how is my portfolio doing</i>",
+      "<i>should I be worried about TSLA</i>",
+      "",
+      "Commands work too when you know what you want: /price /markets /portfolio /help",
       "",
       SAFETY,
       "",

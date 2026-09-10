@@ -200,6 +200,11 @@ export function helpCard(): Card {
     text: [
       b("What I can do"),
       "",
+      // The commands are already discoverable: Telegram puts them in a menu. The half nobody finds
+      // is that a sentence works, so it leads here the same way it leads /start.
+      ...(env().ASSISTANT_ENABLED
+        ? [esc("Talk to me in your own words: what moved today, buy fifty dollars of NVDA, how is my portfolio doing."), ""]
+        : []),
       section("Prices", [
         ["/price NVDA", "price, Chainlink reference, liquidity, status"],
         ["/markets", "listed stocks, with sorting and pages"],
@@ -231,7 +236,7 @@ export function helpCard(): Card {
         ["/cancel", "leave an input step"],
       ]),
       "",
-      i0(env().ASSISTANT_ENABLED ? "Or ask in your own words. Assistant drafts are reviewed and signed in your own wallet." : "Send a ticker or company name, or use /menu for buttons. AI conversation is not enabled on this deployment."),
+      i0(env().ASSISTANT_ENABLED ? "Drafts are reviewed and signed in your own wallet, never here." : "Send a ticker or company name, or use /menu for buttons. AI conversation is not enabled on this deployment."),
       "",
       i0("I never message first, never ask for a key or seed phrase, and cannot sign, approve or move anything."),
       "",

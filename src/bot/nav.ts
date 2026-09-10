@@ -39,6 +39,7 @@ export type Action =
   | { kind: "menu" }
   | { kind: "portfolio"; address?: string }
   | { kind: "pools" }
+  | { kind: "ask" }
   | { kind: "price"; symbol: string }
   | { kind: "buy"; symbol: string }
   | { kind: "sell"; symbol: string }
@@ -72,6 +73,8 @@ export function encode(action: Action): string {
       return action.address ? `pf:${action.address}` : "pf";
     case "pools":
       return "pl";
+    case "ask":
+      return "aq";
     case "top":
       return "lt";
     case "new":
@@ -106,6 +109,7 @@ export function decode(data: string | undefined): Action | null {
   if (data === "n") return { kind: "menu" };
   if (data === "pf") return { kind: "portfolio" };
   if (data === "pl") return { kind: "pools" };
+  if (data === "aq") return { kind: "ask" };
   if (data === "lt") return { kind: "top" };
   if (data === "ln") return { kind: "new" };
 
@@ -168,7 +172,7 @@ export function replyKeyboard(surface: Surface): ReplyKeyboard {
     resize_keyboard: true,
     is_persistent: true,
     input_field_placeholder:
-      surface === "bstocks" ? "Ticker, company name, or tap a button" : "Paste a token address, or tap a button",
+      surface === "bstocks" ? "Ask me anything, or tap a button" : "Paste a token address, or tap a button",
   };
 }
 
