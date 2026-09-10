@@ -39,7 +39,6 @@ export type Action =
   | { kind: "menu" }
   | { kind: "portfolio"; address?: string }
   | { kind: "pools" }
-  | { kind: "ask" }
   | { kind: "price"; symbol: string }
   | { kind: "buy"; symbol: string }
   | { kind: "sell"; symbol: string }
@@ -73,8 +72,6 @@ export function encode(action: Action): string {
       return action.address ? `pf:${action.address}` : "pf";
     case "pools":
       return "pl";
-    case "ask":
-      return "aq";
     case "top":
       return "lt";
     case "new":
@@ -109,7 +106,6 @@ export function decode(data: string | undefined): Action | null {
   if (data === "n") return { kind: "menu" };
   if (data === "pf") return { kind: "portfolio" };
   if (data === "pl") return { kind: "pools" };
-  if (data === "aq") return { kind: "ask" };
   if (data === "lt") return { kind: "top" };
   if (data === "ln") return { kind: "new" };
 
@@ -162,10 +158,21 @@ export const KEYBOARD_ALIASES: Record<string, { command: string; args: string }>
   "❓ Help": { command: "help", args: "" },
 };
 
+/** The one keyboard label that is a question rather than a command. */
+export const ASK_EXAMPLE = "What moved today?";
+
 export function replyKeyboard(surface: Surface): ReplyKeyboard {
   const rows =
     surface === "bstocks"
-      ? [[{ text: "📈 Markets" }, { text: "⭐ Watchlist" }], [{ text: "💼 Portfolio" }, { text: "📰 News" }], [{ text: "🏠 Menu" }, { text: "❓ Help" }]]
+      ? [
+          // Deliberately absent from KEYBOARD_ALIASES: tapping this sends the words as ordinary
+          // text, which is exactly what reaches the assistant. One tap and somebody has asked a
+          // question without being told they could, which no welcome paragraph achieves.
+          [{ text: ASK_EXAMPLE }],
+          [{ text: "📈 Markets" }, { text: "⭐ Watchlist" }],
+          [{ text: "💼 Portfolio" }, { text: "📰 News" }],
+          [{ text: "🏠 Menu" }, { text: "❓ Help" }],
+        ]
       : [[{ text: "🔥 Top" }, { text: "🆕 New" }], [{ text: "🔎 Search" }, { text: "🏠 Menu" }]];
   return {
     keyboard: rows,

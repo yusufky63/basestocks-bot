@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { KEYBOARD_ALIASES, actionButtons, decode, encode, marketButtons, replyKeyboard, signButton, stockButtons } from "./nav";
+import { ASK_EXAMPLE, KEYBOARD_ALIASES, actionButtons, decode, encode, marketButtons, replyKeyboard, signButton, stockButtons } from "./nav";
 import type { Action } from "./nav";
+import { parseCommand } from "./commands";
 
 /**
  * `callback_data` arrives from a chat, so it is parsed the way any other outside string is: strictly,
@@ -70,14 +71,22 @@ describe("callback data", () => {
 });
 
 describe("the persistent keyboard", () => {
-  it("uses labels the router can turn back into commands", () => {
+  it("uses labels the router can turn back into commands, bar the one that is a question", () => {
     for (const surface of ["bstocks", "launchpad"] as const) {
       for (const row of replyKeyboard(surface).keyboard) {
         for (const button of row) {
+          // The example question has no alias on purpose: its whole job is to be sent as ordinary
+          // text so it reaches the assistant. Everything else must map, or a button does nothing.
+          if (button.text === ASK_EXAMPLE) continue;
           expect(KEYBOARD_ALIASES[button.text]).toBeDefined();
         }
       }
     }
+  });
+
+  it("keeps the example question out of the alias table, or it would answer as a command", () => {
+    expect(KEYBOARD_ALIASES[ASK_EXAMPLE]).toBeUndefined();
+    expect(parseCommand(ASK_EXAMPLE)).toBeNull();
   });
 
   it("stays up rather than collapsing behind an icon", () => {

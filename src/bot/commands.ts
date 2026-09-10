@@ -190,12 +190,6 @@ async function route(command: string, ctx: Ctx): Promise<Card | null> {
         text: COPY[c.surface].start,
         preview: { is_disabled: true },
         replyKeyboard: c.isPrivate ? replyKeyboard(c.surface) : undefined,
-        // One tap and they have watched it answer a question, which teaches the thing no sentence
-        // in the welcome can.
-        keyboard:
-          c.surface === "bstocks" && c.isPrivate && env().ASSISTANT_ENABLED
-            ? [[{ text: "\uD83D\uDCAC Show me: what moved today", callback_data: encode({ kind: "ask" }) }]]
-            : undefined,
       };
     },
     menu: (c) => {
@@ -1025,13 +1019,6 @@ async function handleCallback(surface: Surface, tg: Telegram, update: TgUpdate):
   if (action.kind === "confirm") {
     await confirmEligibility(query.from.id);
     action = action.next;
-  }
-
-  if (action.kind === "ask") {
-    if (!message || message.chat.type !== "private" || !env().ASSISTANT_ENABLED) return webhookAck();
-    // The ordinary path, so the metering, the history and the card are the ones a typed question
-    // would have got. The only difference is who chose the words.
-    return assistantReply(tg, { ...message, from: query.from, text: "what moved today?" });
   }
 
   const ctx: Ctx = {
