@@ -1,6 +1,7 @@
 import type { Surface } from "@/config/surfaces";
 import type { InlineKeyboardButton, ReplyKeyboard } from "@/lib/telegram/api";
 import { bstocksUrl, launchpadUrl, stockLink } from "@/lib/links";
+import { handoffUrl, type App } from "@/lib/handoff";
 import type { AssistantAction } from "@/services/assistant";
 
 /**
@@ -157,6 +158,20 @@ export function webAppOrUrl(url: string, isPrivate: boolean): InlineKeyboardButt
   return isPrivate ? { text: "", web_app: { url } } : { text: "", url };
 }
 
+/**
+ * A button for something that ends in a signature.
+ *
+ * Deliberately never a `web_app` button. Rendering the site inside Telegram was tried and it does
+ * not work for signing: the WebView has no injected provider, a passkey cannot open its popup, and
+ * a WalletConnect round trip returns to a session that no longer exists. So a trade goes out to
+ * `/open`, which offers the jump into an app that has a wallet.
+ *
+ * The rule, stated once: reading happens inside Telegram, signing happens in the wallet.
+ */
+export function signButton(text: string, app: App, path: string, label: string): InlineKeyboardButton {
+  return { text, url: handoffUrl(app, path, label) };
+}
+
 /** Under a price card: the two things somebody reading a price wants next. */
 export function stockButtons(symbol: string, address: string, tradable: boolean): InlineKeyboardButton[][] {
   const rows: InlineKeyboardButton[][] = [];
@@ -223,7 +238,12 @@ export function actionButtons(actions: AssistantAction[]): InlineKeyboardButton[
       const verb = action.side === "buy" ? "Buy" : "Sell";
       const size = action.amountUsd ? ` $${action.amountUsd}` : "";
       rows.push([
-        { text: `${verb}${size} ${action.symbol}`, url: stockLink(action.assetAddress, action.side) },
+        signButton(
+          `${verb}${size} ${action.symbol}`,
+          "bstocks",
+          `/stocks/${action.assetAddress}?trade=${action.side}`,
+          `${verb} ${action.symbol}`,
+        ),
       ]);
       continue;
     }

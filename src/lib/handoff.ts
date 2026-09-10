@@ -1,0 +1,75 @@
+import { env } from "@/config/env";
+
+/**
+ * Handing somebody to a wallet, rather than to a browser tab inside Telegram.
+ *
+ * Telegram's in-app browser is where this went wrong the first time. A `web_app` button renders the
+ * site inside Telegram, and inside that WebView there is no injected provider, a passkey cannot open
+ * the popup it needs, and a WalletConnect round trip out to a wallet app and back lands in a fresh
+ * session. It looks like it should work and it does not.
+ *
+ * The reliable move is the opposite: do not bring the wallet to the page, take the page to the
+ * wallet. Base's own docs give the mechanism, `cbwallet://miniapp?url=…`, which opens a URL inside
+ * the Base app where the wallet is native and already connected. BStocks is already built as a Base
+ * mini app, so this is not a workaround, it is the path the app was designed for.
+ *
+ * One obstacle: Telegram accepts only http(s) in a button, so a custom scheme cannot be the button.
+ * Hence `/open`, a page on this service's own domain whose only job is to offer the jump.
+ *
+ * The rule the rest of the bot follows: **reading happens inside Telegram, signing happens in the
+ * wallet.** A portfolio page is fine in a WebView. A trade is not.
+ */
+
+/**
+ * Where a handoff may point. The host is ours, never the caller's, and the path has to match one of
+ * these: `/open` takes a path from a query string, and a page that redirects to an arbitrary
+ * destination is an open redirect with a friendly face.
+ */
+const ALLOWED_PATHS: RegExp[] = [
+  /^\/stocks\/0x[0-9a-fA-F]{40}(\?[\w=&%.,:-]*)?$/,
+  /^\/token\/0x[0-9a-fA-F]{40}$/,
+  /^\/(markets|portfolio|earn|gifts|build|automate|create)(\?[\w=&%.,:-]*)?$/,
+];
+
+export type App = "bstocks" | "launchpad";
+
+export function isAllowedPath(path: string): boolean {
+  return ALLOWED_PATHS.some((rule) => rule.test(path));
+}
+
+export function appOrigin(app: App): string {
+  return app === "bstocks" ? env().BSTOCKS_URL : env().LAUNCHPAD_URL;
+}
+
+/** The full destination, once the path has been checked. Null when it has not. */
+export function destination(app: App, path: string): string | null {
+  if (!isAllowedPath(path)) return null;
+  return new URL(path, appOrigin(app)).toString();
+}
+
+/**
+ * The button's URL: this service's own `/open`, which Telegram will accept, carrying the app and
+ * the path rather than a whole URL, so there is nothing for a caller to redirect to.
+ */
+export function handoffUrl(app: App, path: string, label?: string): string {
+  const url = new URL("/open", env().BOT_URL);
+  url.searchParams.set("app", app);
+  url.searchParams.set("to", path);
+  if (label) url.searchParams.set("label", label.slice(0, 40));
+  return url.toString();
+}
+
+/** Opens the destination inside the Base app, where the wallet is native. */
+export function baseAppLink(target: string): string {
+  return `cbwallet://miniapp?url=${encodeURIComponent(target)}`;
+}
+
+/**
+ * Opens the destination inside MetaMask's own browser.
+ *
+ * MetaMask's universal link takes a bare host and path with no scheme, which is why this strips it
+ * rather than passing the URL through.
+ */
+export function metaMaskLink(target: string): string {
+  return `https://metamask.app.link/dapp/${target.replace(/^https?:\/\//i, "")}`;
+}

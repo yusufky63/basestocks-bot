@@ -15,6 +15,12 @@ const serverSchema = z.object({
   /** Where health alerts and indexer-lag notices go. A private chat with the operator. */
   TELEGRAM_OPS_CHAT_ID: z.string().optional(),
 
+  /**
+   * This service's own public origin, used to build the `/open` handoff link. Without it a trade
+   * button has nowhere to point, so the handoff falls back to a plain link into the site.
+   */
+  BOT_URL: z.string().url().default("https://bot.basestocks.finance"),
+
   /** Upstream products. Overridable so a preview deployment can point at a preview. */
   BSTOCKS_URL: z.string().url().default("https://basestocks.finance"),
   LAUNCHPAD_URL: z.string().url().default("https://launchpad.basestocks.finance"),

@@ -5,7 +5,7 @@ import { stockLink, launchpadTokenLink, launchpadMarketsLink } from "@/lib/links
 import type { Portfolio, V1Stock } from "@/services/bstocks";
 import { isTradable } from "@/services/bstocks";
 import { BASE_FEE_BPS, feeBpsAt, secondsUntilFairFee, type Market } from "@/services/launchpad";
-import { launchpadListButtons, marketButtons, stockButtons } from "./nav";
+import { launchpadListButtons, marketButtons, signButton, stockButtons } from "./nav";
 
 /** A rendered reply: the text plus whatever buttons and preview belong with it. */
 export interface Card {
@@ -181,14 +181,16 @@ export function tokenCard(market: Market, now = Date.now(), side?: "buy" | "sell
     editable: true,
     keyboard: [
       [
-        {
-          text: fee
+        signButton(
+          fee
             ? `Open (wait ${secondsUntilFairFee(market.launchedAt, now)}s)`
             : side
               ? `${side === "buy" ? "Buy" : "Sell"} ${market.symbol}`
               : `Trade ${market.symbol}`,
-          url: href,
-        },
+          "launchpad",
+          `/token/${market.token}`,
+          `Trade ${market.symbol}`,
+        ),
         { text: "Share", switch_inline_query_chosen_chat: { query: market.symbol, allow_user_chats: true, allow_group_chats: true } },
       ],
       [{ text: `More paired with ${market.stock.ticker}`, url: launchpadMarketsLink(market.stock.address) }],

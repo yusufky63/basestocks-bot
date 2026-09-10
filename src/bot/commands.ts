@@ -11,7 +11,7 @@ import { automateLink, bstocksUrl, evenLegs, launchpadCreateLink, stockLink } fr
 import { isTradable, listStocks, readPortfolio, readStats, reverseBasename, type V1Stock } from "@/services/bstocks";
 import { listMarkets, listLaunchStocks, readToken, type Market } from "@/services/launchpad";
 import { askAssistant } from "@/services/assistant";
-import { KEYBOARD_ALIASES, actionButtons, decode, encode, menuCard, replyKeyboard, webAppOrUrl } from "./nav";
+import { KEYBOARD_ALIASES, actionButtons, decode, encode, menuCard, replyKeyboard, signButton, webAppOrUrl } from "./nav";
 import { confirmEligibility, eligibilityCard, hasConfirmed } from "./eligibility";
 import { appendTurns, clearHistory, loadHistory } from "./history";
 import { forgetWallet, getWallet, setWallet, toAddress } from "./wallet";
@@ -405,6 +405,7 @@ async function stockHandoff(ctx: Ctx, side: "buy" | "sell"): Promise<Card> {
     );
   }
 
+  // Still used for the link preview card, which is a picture rather than a destination.
   const href = stockLink(stock.address, side);
   const lines = [
     b(`${verb} ${stock.symbol} · ${stock.name}`),
@@ -433,9 +434,9 @@ async function stockHandoff(ctx: Ctx, side: "buy" | "sell"): Promise<Card> {
   return {
     text: lines.join("\n"),
     keyboard: [
-      // Inside Telegram in a private chat, a plain link in a group: Telegram refuses `web_app` on
-      // an inline keyboard anywhere else, and it refuses the whole message to say so.
-      [{ ...webAppOrUrl(href, ctx.isPrivate), text: `${verb} ${stock.symbol}` }],
+      // Out to a wallet, never into Telegram's own browser: that WebView has no provider to sign
+      // with, which is the whole reason `/open` exists.
+      [signButton(`${verb} ${stock.symbol}`, "bstocks", `/stocks/${stock.address}?trade=${side}`, `${verb} ${stock.symbol}`)],
       [
         { text: "Price", callback_data: encode({ kind: "price", symbol: stock.symbol }) },
         { text: "Share", switch_inline_query_chosen_chat: { query: stock.symbol, allow_user_chats: true, allow_group_chats: true } },

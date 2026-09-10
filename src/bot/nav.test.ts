@@ -103,12 +103,25 @@ describe("card buttons", () => {
 });
 
 describe("assistant actions", () => {
-  it("turns a drafted trade into one tap, with the side the draft chose", () => {
+  it("turns a drafted trade into one tap, routed out to a wallet rather than into Telegram", () => {
     const rows = actionButtons([
       { kind: "trade", side: "buy", symbol: "NVDA", name: "NVIDIA", assetAddress: `0x${"b".repeat(40)}`, amountUsd: 50 },
     ]);
     expect(rows[0]?.[0]?.text).toBe("Buy $50 NVDA");
-    expect(rows[0]?.[0]?.url).toContain("trade=buy");
+
+    // A signature never opens in Telegram's own browser, so the button points at /open, which
+    // offers the jump into an app that actually has a wallet.
+    const url = new URL(rows[0]![0]!.url!);
+    expect(url.pathname).toBe("/open");
+    expect(url.searchParams.get("to")).toBe(`/stocks/0x${"b".repeat(40)}?trade=buy`);
+    expect(url.searchParams.get("app")).toBe("bstocks");
+  });
+
+  it("never renders a signing button as a Telegram web_app button", () => {
+    const rows = actionButtons([
+      { kind: "trade", side: "sell", symbol: "TSLA", name: "Tesla", assetAddress: `0x${"c".repeat(40)}` },
+    ]);
+    expect(rows[0]?.[0]?.web_app).toBeUndefined();
   });
 
   it("links a cited headline to where the feed pointed, not to anything the model wrote", () => {
