@@ -26,11 +26,17 @@ export function pct(value: number | null | undefined, digits = 2): string {
   return `${sign}${value.toFixed(digits)}%`;
 }
 
-/** A move, with the arrow that makes a list scannable without colour. */
-export function move(value: number | null | undefined): string {
+/**
+ * A move, with the arrow that makes a list scannable without colour.
+ *
+ * The arrow carries the sign, so the number must not carry it too: `pct` would print a `+` for the
+ * absolute value and render a fall as "▼ +0.87%", which reads as a contradiction and was live in
+ * production for exactly one deploy.
+ */
+export function move(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   const arrow = value > 0 ? "▲" : value < 0 ? "▼" : "•";
-  return `${arrow} ${pct(Math.abs(value))}`;
+  return `${arrow} ${Math.abs(value).toFixed(digits)}%`;
 }
 
 export function shortAddress(address: string): string {
