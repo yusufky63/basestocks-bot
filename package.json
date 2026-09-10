@@ -1,0 +1,32 @@
+{
+  "name": "basestocks-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telegram bots for BaseStocks and the BaseStocks Launchpad. Reads their public APIs, hands every signature back to the user's own wallet.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "telegram:setup": "node scripts/setup-telegram.mjs",
+    "telegram:secret": "node scripts/setup-telegram.mjs secret"
+  },
+  "dependencies": {
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.4",
+    "typescript": "^5",
+    "vitest": "^4.1.11"
+  },
+  "packageManager": "pnpm@9.15.4"
+}
