@@ -1,18 +1,66 @@
 {
   "bstocks": [
-    { "command": "price", "description": "Price, reference and liquidity for one stock" },
-    { "command": "markets", "description": "Every listed stock by 24h move" },
-    { "command": "open", "description": "Open a stock's trade panel in the app" },
-    { "command": "dca", "description": "Build a recurring plan link" },
-    { "command": "stats", "description": "Verified platform activity" },
-    { "command": "help", "description": "What this bot can do" }
+    {
+      "command": "price",
+      "description": "Price, reference and liquidity for one stock"
+    },
+    {
+      "command": "buy",
+      "description": "Open the trade panel on the buy side"
+    },
+    {
+      "command": "sell",
+      "description": "Open the trade panel on the sell side"
+    },
+    {
+      "command": "markets",
+      "description": "Every listed stock by 24h move"
+    },
+    {
+      "command": "dca",
+      "description": "Build a recurring plan link"
+    },
+    {
+      "command": "stats",
+      "description": "Verified platform activity"
+    },
+    {
+      "command": "help",
+      "description": "What this bot can do"
+    }
   ],
   "launchpad": [
-    { "command": "top", "description": "Tokens by 24h traded value" },
-    { "command": "new", "description": "Latest launches, with the fee countdown" },
-    { "command": "token", "description": "One token's card" },
-    { "command": "search", "description": "Find a token by name or symbol" },
-    { "command": "launch", "description": "Prefilled link to the create form" },
-    { "command": "help", "description": "What this bot can do" }
+    {
+      "command": "top",
+      "description": "Tokens by 24h traded value"
+    },
+    {
+      "command": "new",
+      "description": "Latest launches, with the fee countdown"
+    },
+    {
+      "command": "token",
+      "description": "One token's card"
+    },
+    {
+      "command": "buy",
+      "description": "Open a token with its current fee shown"
+    },
+    {
+      "command": "sell",
+      "description": "Open a token to sell"
+    },
+    {
+      "command": "search",
+      "description": "Find a token by name or symbol"
+    },
+    {
+      "command": "launch",
+      "description": "Prefilled link to the create form"
+    },
+    {
+      "command": "help",
+      "description": "What this bot can do"
+    }
   ]
 }

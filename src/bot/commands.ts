@@ -6,9 +6,9 @@ import type { TgChat, TgMessage, TgUpdate, TgUser } from "@/lib/telegram/types";
 import { b, esc } from "@/lib/telegram/html";
 import { LIMITS, meter } from "@/lib/rate-limit";
 import { claimOnce } from "@/lib/store";
-import { compactUsd, pad } from "@/lib/format";
+import { compactUsd, move, pad, usd } from "@/lib/format";
 import { automateLink, evenLegs, launchpadCreateLink, stockLink } from "@/lib/links";
-import { listStocks, readStats, type V1Stock } from "@/services/bstocks";
+import { isTradable, listStocks, readStats, type V1Stock } from "@/services/bstocks";
 import { listMarkets, listLaunchStocks, readToken, type Market } from "@/services/launchpad";
 import { askAssistant } from "@/services/assistant";
 import { COPY } from "./copy";
@@ -138,25 +138,10 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     return marketsCard(stocks);
   },
 
-  open: async (ctx) => {
-    if (!ctx.args) return { text: esc("Which stock? Try /open NVDA"), preview: { is_disabled: true } };
-    const stocks = await listStocks();
-    if (stocks.length === 0) return upstreamDown();
-    const { stock, suggestions } = resolveStock(stocks, ctx.args);
-    if (!stock) return notFound(ctx.args, suggestions);
-    const href = stockLink(stock.address, "buy");
-    return {
-      text: [
-        b(`${stock.symbol} · ${stock.name}`),
-        "",
-        esc("Opening the app puts the trade panel in front of you with the amount still yours to set. Nothing is signed until you confirm it in your own wallet."),
-        "",
-        `<i>${esc(COPY.bstocks.footer)}</i>`,
-      ].join("\n"),
-      keyboard: [[{ text: `Open ${stock.symbol}`, url: href }]],
-      preview: { url: href, prefer_small_media: true },
-    };
-  },
+  buy: (ctx) => stockHandoff(ctx, "buy"),
+  sell: (ctx) => stockHandoff(ctx, "sell"),
+  /** Kept because it was published before `buy` existed, and an advertised command should not vanish. */
+  open: (ctx) => stockHandoff(ctx, "buy"),
 
   /**
    * A recurring plan, handed over entirely in a URL.
@@ -278,6 +263,62 @@ export function parseDca(args: string): DcaRequest | null {
   return { usd, tickers, cadenceDays: cadence.days, cadenceLabel: cadence.label };
 }
 
+/**
+ * The one place a stock trade is handed over.
+ *
+ * This is what `/buy` and `/sell` are: not a trade, a link. The bot has no key, and both the quote
+ * and the eligibility check belong to a request the user makes themselves, from their own device,
+ * carrying their own region. The app opens with the side already chosen and the amount still theirs
+ * to set, and nothing is signed until they confirm it in their own wallet.
+ */
+async function stockHandoff(ctx: Ctx, side: "buy" | "sell"): Promise<Card> {
+  const verb = side === "buy" ? "Buy" : "Sell";
+  if (!ctx.args) {
+    return { text: esc(`Which stock? Try /${side} NVDA`), preview: { is_disabled: true } };
+  }
+  const stocks = await listStocks();
+  if (stocks.length === 0) return upstreamDown();
+  const { stock, suggestions } = resolveStock(stocks, ctx.args);
+  if (!stock) return notFound(ctx.args, suggestions);
+
+  const href = stockLink(stock.address, side);
+  const lines = [
+    b(`${verb} ${stock.symbol} · ${stock.name}`),
+    `${b(usd(stock.dexPriceUsd ?? stock.displayUsd))}  ${esc(move(stock.dexChange24hPct))}`,
+    "",
+  ];
+
+  if (!isTradable(stock)) {
+    // Say why before offering a button that opens a panel which cannot fill anything.
+    lines.push(
+      `${esc(stock.status.label)}: ${esc(stock.status.detail)}`,
+      "",
+      esc("The panel still opens, but no route can fill an order at this size right now."),
+    );
+  } else {
+    lines.push(
+      esc(
+        side === "buy"
+          ? "The app opens on the buy side with the amount still yours to set. It asks every route at once, shows you a firm quote, simulates the transaction, and nothing is signed until you confirm it in your own wallet."
+          : "The app opens on the sell side. It asks every route at once and shows you a firm quote before anything is signed in your own wallet.",
+      ),
+    );
+  }
+
+  lines.push("", `<i>${esc(COPY.bstocks.footer)}</i>`);
+
+  return {
+    text: lines.join("\n"),
+    keyboard: [
+      [
+        { text: `${verb} ${stock.symbol}`, url: href },
+        { text: "Share", switch_inline_query_chosen_chat: { query: stock.symbol, allow_user_chats: true, allow_group_chats: true } },
+      ],
+    ],
+    preview: { url: href, prefer_small_media: true },
+  };
+}
+
 /* ------------------------------------------------------------------ *
  * Launchpad commands
  * ------------------------------------------------------------------ */
@@ -323,6 +364,9 @@ const LAUNCHPAD_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     }
     return tokenCard(market);
   },
+
+  buy: (ctx) => tokenHandoff(ctx, "buy"),
+  sell: (ctx) => tokenHandoff(ctx, "sell"),
 
   search: async (ctx) => {
     if (!ctx.args) return { text: esc("Search for what? Try /search doge"), preview: { is_disabled: true } };
@@ -394,6 +438,38 @@ const LAUNCHPAD_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     };
   },
 };
+
+/**
+ * A launchpad trade, handed over the same way, with one addition that matters more here.
+ *
+ * These pools charge 99% of the stock side in their first second, decaying to 1% over twenty. So a
+ * trade button on a fresh token is an invitation to lose most of an order, and `tokenCard` puts the
+ * countdown above the price and writes the wait into the button label rather than under it.
+ *
+ * The other thing worth saying out loud: buying needs the paired tokenized stock in the wallet
+ * already. There is no USDC or ETH route into these pools, and finding that out at the trade panel
+ * is a worse place to find it out than here.
+ */
+async function tokenHandoff(ctx: Ctx, side: "buy" | "sell"): Promise<Card> {
+  if (!ctx.args) {
+    return { text: esc(`Which token? Try /${side} 0x… or /${side} SYMBOL`), preview: { is_disabled: true } };
+  }
+  const market = await findMarket(ctx.args);
+  if (market === "indexing") {
+    return {
+      text: [
+        b("Just launched"),
+        "",
+        esc("The launch is confirmed onchain but the indexer has not stored it yet, so I cannot price it. Try again in a few seconds."),
+      ].join("\n"),
+      preview: { is_disabled: true },
+    };
+  }
+  if (!market) {
+    return { text: esc(`No token matched "${ctx.args.slice(0, 32)}". /search finds one by name or symbol.`), preview: { is_disabled: true } };
+  }
+  return tokenCard(market, Date.now(), side);
+}
 
 function clampCount(args: string, fallback: number): number {
   const n = Number(args.trim().split(/\s+/)[0]);

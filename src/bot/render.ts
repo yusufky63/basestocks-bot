@@ -142,7 +142,7 @@ export function feeLine(market: Market, now = Date.now()): string | null {
  * escaped and none of the creator's own links (`website`, `twitter`, `telegram`) is rendered as a
  * clickable link. The only anchors are the ones this file builds.
  */
-export function tokenCard(market: Market, now = Date.now()): Card {
+export function tokenCard(market: Market, now = Date.now(), side?: "buy" | "sell"): Card {
   const href = launchpadTokenLink(market.token);
   const fee = feeLine(market, now);
 
@@ -179,7 +179,14 @@ export function tokenCard(market: Market, now = Date.now()): Card {
     text: lines.join("\n"),
     keyboard: [
       [
-        { text: fee ? `Open (wait ${secondsUntilFairFee(market.launchedAt, now)}s)` : `Trade ${market.symbol}`, url: href },
+        {
+          text: fee
+            ? `Open (wait ${secondsUntilFairFee(market.launchedAt, now)}s)`
+            : side
+              ? `${side === "buy" ? "Buy" : "Sell"} ${market.symbol}`
+              : `Trade ${market.symbol}`,
+          url: href,
+        },
         { text: "Share", switch_inline_query_chosen_chat: { query: market.symbol, allow_user_chats: true, allow_group_chats: true } },
       ],
       [{ text: `More paired with ${market.stock.ticker}`, url: launchpadMarketsLink(market.stock.address) }],
