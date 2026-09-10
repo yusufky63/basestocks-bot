@@ -87,6 +87,33 @@ export async function bump(key: string, ttlSec: number): Promise<number> {
   return 1;
 }
 
+/**
+ * Remembers a small fact about one Telegram user for a while.
+ *
+ * The only thing stored through this today is that somebody read the eligibility notice and said
+ * the sentence applies to them. It is a fact about a conversation, not a profile: one boolean under
+ * an opaque key, expiring on its own, holding no address, no name and no country.
+ */
+export async function remember(key: string, ttlSec: number): Promise<void> {
+  const shared = await command(["SET", key, "1", "EX", String(ttlSec)]);
+  if (shared !== null) return;
+  sweep();
+  memory.set(key, { value: 1, expiresAt: Date.now() + ttlSec * 1_000 });
+}
+
+export async function recall(key: string): Promise<boolean> {
+  const cfg = upstash();
+  if (cfg) {
+    const shared = await command(["GET", key]);
+    // A null here is genuinely ambiguous: absent, or the store is unreachable. Both mean "ask
+    // again", which is the safe direction for a notice.
+    return shared === "1" || shared === 1;
+  }
+  sweep();
+  const hit = memory.get(key);
+  return Boolean(hit && hit.expiresAt > Date.now());
+}
+
 /** Window key that rolls on its own, so nothing has to be swept on a schedule. */
 export function windowKey(prefix: string, identity: string, windowSec: number): string {
   return `${prefix}:${identity}:${Math.floor(nowSec() / windowSec)}`;

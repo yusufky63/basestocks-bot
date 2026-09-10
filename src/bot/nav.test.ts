@@ -42,6 +42,26 @@ describe("callback data", () => {
     expect(decode("p:" + "A".repeat(40))).toBeNull();
   });
 
+  it("round-trips a confirmation with the action waiting behind it", () => {
+    const gated = { kind: "confirm", next: { kind: "buy", symbol: "NVDA" } } as const;
+    expect(decode(encode(gated))).toEqual(gated);
+    expect(Buffer.byteLength(encode({ kind: "confirm", next: { kind: "token", address: `0x${"a".repeat(40)}` } }), "utf8")).toBeLessThanOrEqual(64);
+  });
+
+  it("lets a confirmation gate only the actions worth gating", () => {
+    // Otherwise a crafted `c:` prefix would be a way to reach anything at all.
+    expect(decode("c:m")).toBeNull();
+    expect(decode("c:h")).toBeNull();
+    expect(decode("c:c:b:NVDA")).toBeNull();
+    expect(decode("c:")).toBeNull();
+  });
+
+  it("keeps the tail of a nested payload instead of truncating it", () => {
+    // `split(":", 2)` would have turned c:b:NVDA into c plus b and dropped the symbol silently.
+    const decoded = decode("c:b:NVDA");
+    expect(decoded).toEqual({ kind: "confirm", next: { kind: "buy", symbol: "NVDA" } });
+  });
+
   it("refuses a token argument that is not an address", () => {
     expect(decode("t:NVDA")).toBeNull();
     expect(decode(`t:0x${"z".repeat(40)}`)).toBeNull();

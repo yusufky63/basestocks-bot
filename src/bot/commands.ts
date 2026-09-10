@@ -11,7 +11,8 @@ import { automateLink, evenLegs, launchpadCreateLink, stockLink } from "@/lib/li
 import { isTradable, listStocks, readStats, type V1Stock } from "@/services/bstocks";
 import { listMarkets, listLaunchStocks, readToken, type Market } from "@/services/launchpad";
 import { askAssistant } from "@/services/assistant";
-import { KEYBOARD_ALIASES, actionButtons, decode, menuCard, replyKeyboard } from "./nav";
+import { KEYBOARD_ALIASES, actionButtons, decode, encode, menuCard, replyKeyboard } from "./nav";
+import { confirmEligibility, eligibilityCard, hasConfirmed } from "./eligibility";
 import { COPY } from "./copy";
 import { CLAIM_HELP, KEY_WARNING, inspectForClaim } from "./claim";
 import { isAddress, resolveStock, splitTickers } from "./resolve";
@@ -204,8 +205,6 @@ const BSTOCKS_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
     lines.push(
       "",
       esc("The link opens the wizard already filled in. The contract enforces the amount, the cadence, the routes and the minimum you receive, and it can never sell."),
-      "",
-      `<i>${esc(COPY.bstocks.footer)}</i>`,
     );
 
     return {
@@ -294,6 +293,15 @@ async function stockHandoff(ctx: Ctx, side: "buy" | "sell"): Promise<Card> {
   const { stock, suggestions } = resolveStock(stocks, ctx.args);
   if (!stock) return notFound(ctx.args, suggestions);
 
+  // The notice, once, in front of the thing it is about. See src/bot/eligibility.ts for what this
+  // confirmation is and, more importantly, what it is not.
+  if (ctx.from && !(await hasConfirmed(ctx.from.id))) {
+    return eligibilityCard(
+      encode({ kind: "confirm", next: { kind: side, symbol: stock.symbol } }),
+      `${verb} ${stock.symbol}`,
+    );
+  }
+
   const href = stockLink(stock.address, side);
   const lines = [
     b(`${verb} ${stock.symbol} · ${stock.name}`),
@@ -318,7 +326,6 @@ async function stockHandoff(ctx: Ctx, side: "buy" | "sell"): Promise<Card> {
     );
   }
 
-  lines.push("", `<i>${esc(COPY.bstocks.footer)}</i>`);
 
   return {
     text: lines.join("\n"),
@@ -443,8 +450,6 @@ const LAUNCHPAD_COMMANDS: Record<string, (c: Ctx) => Promise<Card>> = {
         `${esc("Paired with")} ${b(stock.ticker)}`,
         "",
         esc("The link opens the create form with those filled in. You add the image, pin the metadata from your own browser and sign the launch. I never hold a key and never send a transaction."),
-        "",
-        `<i>${esc(COPY.launchpad.footer)}</i>`,
       ].join("\n"),
       keyboard: [[{ text: "Open the create form", url: href }]],
       preview: { url: href, prefer_small_media: true },
@@ -480,6 +485,14 @@ async function tokenHandoff(ctx: Ctx, side: "buy" | "sell"): Promise<Card> {
   }
   if (!market) {
     return { text: esc(`No token matched "${ctx.args.slice(0, 32)}". /search finds one by name or symbol.`), preview: { is_disabled: true } };
+  }
+  // Trading here means holding the paired tokenized stock, so the same notice applies even though
+  // the token itself is permissionless.
+  if (ctx.from && !(await hasConfirmed(ctx.from.id))) {
+    return eligibilityCard(
+      encode({ kind: "confirm", next: { kind: "token", address: market.token } }),
+      `${side === "buy" ? "Buy" : "Sell"} ${market.symbol}`,
+    );
   }
   return tokenCard(market, Date.now(), side);
 }
@@ -533,15 +546,18 @@ async function inlineStocks(raw: string): Promise<unknown[]> {
   const matched = query
     ? stocks.filter((s) => s.symbol.toUpperCase().includes(query) || s.name.toUpperCase().includes(query))
     : stocks;
+  // An inline result lands in a chat where nobody read the bot's description, so this is the one
+  // place the full notice still travels with the card.
   return matched.slice(0, 20).map((s) => {
     const card = stockCard(s);
+    const text = `${card.text}\n\n<i>${esc(COPY.bstocks.footer)}</i>`;
     return {
       type: "article",
       id: s.address,
       title: `${s.symbol} · ${s.dexPriceUsd === null ? "—" : `$${s.dexPriceUsd.toFixed(2)}`}`,
       description: `${s.name} · ${s.status.label}`,
       thumbnail_url: s.logoUrl,
-      input_message_content: { message_text: card.text, parse_mode: "HTML" },
+      input_message_content: { message_text: text, parse_mode: "HTML" },
       reply_markup: card.keyboard ? { inline_keyboard: card.keyboard } : undefined,
     };
   });
@@ -551,12 +567,13 @@ async function inlineTokens(raw: string): Promise<unknown[]> {
   const page = await listMarkets({ q: raw.trim().slice(0, 64) || undefined, limit: 20, orderBy: "volume24h" });
   return (page?.markets ?? []).map((m) => {
     const card = tokenCard(m);
+    const text = `${card.text}\n\n<i>${esc(COPY.launchpad.footer)}</i>`;
     return {
       type: "article",
       id: m.token,
       title: `${m.symbol} · ${m.priceUsd === null ? "—" : `$${m.priceUsd.toFixed(6)}`}`,
       description: `${m.name} · paired with ${m.stock.ticker} · ${m.holders} holders`,
-      input_message_content: { message_text: card.text, parse_mode: "HTML" },
+      input_message_content: { message_text: text, parse_mode: "HTML" },
       reply_markup: card.keyboard ? { inline_keyboard: card.keyboard } : undefined,
     };
   });
@@ -643,7 +660,7 @@ async function assistantReply(tg: Telegram, message: TgMessage): Promise<Respons
     await tg.sendMessage({
       chat_id: message.chat.id,
       message_thread_id: message.message_thread_id,
-      text: `${esc(answer.reply)}${handoff}\n\n<i>${esc(COPY.bstocks.footer)}</i>`,
+      text: `${esc(answer.reply)}${handoff}`,
       parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
       reply_markup: buttons.length > 0 ? { inline_keyboard: buttons } : undefined,
@@ -670,9 +687,14 @@ async function handleCallback(surface: Surface, tg: Telegram, update: TgUpdate):
 
   await tg.answerCallback(query.id);
 
-  const action = decode(query.data);
+  let action = decode(query.data);
   const message = query.message;
   if (!action || !message) return webhookAck();
+
+  if (action.kind === "confirm") {
+    await confirmEligibility(query.from.id);
+    action = action.next;
+  }
 
   const verdict = await meter("cb", String(query.from.id), LIMITS.command);
   if (!verdict.allowed) return webhookAck();

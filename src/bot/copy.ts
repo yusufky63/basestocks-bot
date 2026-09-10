@@ -27,7 +27,11 @@ export interface SurfaceCopy {
   name: string;
   start: string;
   help: string;
-  /** Appended to anything that could lead somebody to act. */
+  /**
+   * The full notice. It appears where somebody is meeting the bot for the first time (`/start`,
+   * `/help`, an inline result in a chat that never saw either) and in front of a trade, not under
+   * every price. A disclaimer repeated on every message is a disclaimer nobody reads.
+   */
   footer: string;
 }
 

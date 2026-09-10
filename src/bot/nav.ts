@@ -35,7 +35,9 @@ export type Action =
   | { kind: "sell"; symbol: string }
   | { kind: "top" }
   | { kind: "new" }
-  | { kind: "token"; address: string };
+  | { kind: "token"; address: string }
+  /** "I confirm" in front of an action, carrying that action so it can continue afterwards. */
+  | { kind: "confirm"; next: Action };
 
 const SYMBOL = /^[A-Za-z0-9.\-]{1,12}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -62,6 +64,8 @@ export function encode(action: Action): string {
       return `s:${action.symbol}`;
     case "token":
       return `t:${action.address}`;
+    case "confirm":
+      return `c:${encode(action.next)}`;
   }
 }
 
@@ -74,8 +78,21 @@ export function decode(data: string | undefined): Action | null {
   if (data === "lt") return { kind: "top" };
   if (data === "ln") return { kind: "new" };
 
-  const [verb, argument] = data.split(":", 2);
+  // Not `split(":", 2)`: that truncates rather than keeping the tail, which would turn `c:b:NVDA`
+  // into `c` plus `b` and quietly drop the symbol.
+  const at = data.indexOf(":");
+  if (at <= 0) return null;
+  const verb = data.slice(0, at);
+  const argument = data.slice(at + 1);
   if (!argument) return null;
+
+  if (verb === "c") {
+    const next = decode(argument);
+    // Only an action worth gating may sit behind a confirmation, so a crafted `c:` cannot be used
+    // to reach anything else.
+    if (!next || (next.kind !== "buy" && next.kind !== "sell" && next.kind !== "token")) return null;
+    return { kind: "confirm", next };
+  }
   if (verb === "t") return ADDRESS.test(argument) ? { kind: "token", address: argument } : null;
   if (!SYMBOL.test(argument)) return null;
   if (verb === "p") return { kind: "price", symbol: argument };

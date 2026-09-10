@@ -5,7 +5,6 @@ import { stockLink, launchpadTokenLink, launchpadMarketsLink } from "@/lib/links
 import type { V1Stock } from "@/services/bstocks";
 import { isTradable } from "@/services/bstocks";
 import { BASE_FEE_BPS, feeBpsAt, secondsUntilFairFee, type Market } from "@/services/launchpad";
-import { COPY } from "./copy";
 import { launchpadListButtons, marketButtons, stockButtons } from "./nav";
 
 /** A rendered reply: the text plus whatever buttons and preview belong with it. */
@@ -80,7 +79,6 @@ export function stockCard(stock: V1Stock): Card {
   if (!isTradable(stock)) {
     lines.push(i0(stock.status.detail));
   }
-  lines.push("", i0(COPY.bstocks.footer));
 
   return {
     text: lines.join("\n"),
@@ -112,8 +110,6 @@ export function marketsCard(stocks: V1Stock[]): Card {
       b("Listed stocks"),
       `<pre>${esc(`${pad("", 6)}${padStart("price", 10)}${padStart("24h", 8)}${padStart("liq", 8)}`)}\n${esc(body)}</pre>`,
       i0("Liquidity is beside each row because a thin pool moves on a small order."),
-      "",
-      i0(COPY.bstocks.footer),
     ].join("\n"),
     // Tapping a ticker is the whole reason this table is worth sending: reading a row and pricing
     // it should not be two different acts of remembering.
@@ -178,7 +174,6 @@ export function tokenCard(market: Market, now = Date.now(), side?: "buy" | "sell
   lines.push(
     "",
     i0(`Buying needs ${market.stock.ticker} in your wallet: these pools quote in the stock, not in USDC or ETH.`),
-    i0(COPY.launchpad.footer),
   );
 
   return {
@@ -228,8 +223,6 @@ export function marketListCard(title: string, note: string, markets: Market[], n
       i0(note),
       "",
       link("All markets", launchpadMarketsLink()),
-      "",
-      i0(COPY.launchpad.footer),
     ].join("\n"),
     keyboard: launchpadListButtons(markets.map((m) => ({ symbol: m.symbol, token: m.token }))),
     preview: { is_disabled: true },
