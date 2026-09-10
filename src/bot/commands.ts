@@ -11,6 +11,7 @@ import { automateLink, evenLegs, launchpadCreateLink, stockLink } from "@/lib/li
 import { isTradable, listStocks, readStats, type V1Stock } from "@/services/bstocks";
 import { listMarkets, listLaunchStocks, readToken, type Market } from "@/services/launchpad";
 import { askAssistant } from "@/services/assistant";
+import { KEYBOARD_ALIASES, actionButtons, decode, menuCard, replyKeyboard } from "./nav";
 import { COPY } from "./copy";
 import { CLAIM_HELP, KEY_WARNING, inspectForClaim } from "./claim";
 import { isAddress, resolveStock, splitTickers } from "./resolve";
@@ -41,6 +42,7 @@ export async function handleUpdate(surface: Surface, token: string, update: TgUp
 
   if (update.my_chat_member) return handleMembership(surface, tg, update);
   if (update.inline_query) return handleInline(surface, tg, update);
+  if (update.callback_query) return handleCallback(surface, tg, update);
 
   const message = update.message;
   if (!message?.text) return webhookAck();
@@ -61,7 +63,9 @@ async function handleMessage(surface: Surface, tg: Telegram, message: TgMessage)
   }
 
   const isPrivate = message.chat.type === "private";
-  const parsed = parseCommand(text);
+  // A persistent-keyboard button sends its own label as ordinary text, so the label table is read
+  // before anything else treats the message as prose.
+  const parsed = parseCommand(text) ?? KEYBOARD_ALIASES[text.trim()] ?? null;
 
   if (!parsed) {
     if (claim.kind === "claim-link" && surface === "bstocks") {
@@ -105,7 +109,16 @@ export function parseCommand(text: string): { command: string; args: string } | 
 
 async function route(command: string, ctx: Ctx): Promise<Card | null> {
   const shared: Record<string, (c: Ctx) => Promise<Card> | Card> = {
-    start: (c) => ({ text: COPY[c.surface].start, preview: { is_disabled: true } }),
+    start: (c) => ({
+      text: COPY[c.surface].start,
+      preview: { is_disabled: true },
+      // The one message where replacing the phone keyboard is worth the rows it costs.
+      replyKeyboard: c.isPrivate ? replyKeyboard(c.surface) : undefined,
+    }),
+    menu: (c) => {
+      const card = menuCard(c.surface);
+      return { text: card.text, keyboard: card.keyboard, preview: { is_disabled: true }, editable: true };
+    },
     help: (c) => ({ text: COPY[c.surface].help, preview: { is_disabled: true } }),
   };
   const table = ctx.surface === "bstocks" ? BSTOCKS_COMMANDS : LAUNCHPAD_COMMANDS;
@@ -604,16 +617,97 @@ async function assistantReply(tg: Telegram, message: TgMessage): Promise<Respons
   const question = (message.text ?? "").slice(0, 1_000);
   after(async () => {
     await tg.chatAction(message.chat.id, message.message_thread_id);
-    const answer = await askAssistant(question);
+    const answer = await askAssistant([{ role: "user", content: question }]);
+
+    if (answer.refusal) {
+      await tg.sendMessage({
+        chat_id: message.chat.id,
+        message_thread_id: message.message_thread_id,
+        text: esc(answer.refusal),
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+      });
+      return;
+    }
+
+    // Model output is data. It is escaped without exception, exactly like a headline or a token
+    // name, and the only links in the reply are the ones `actionButtons` built from typed fields.
+    const buttons = actionButtons(answer.actions);
     await tg.sendMessage({
       chat_id: message.chat.id,
       message_thread_id: message.message_thread_id,
-      text: answer,
+      text: `${esc(answer.reply)}\n\n<i>${esc(COPY.bstocks.footer)}</i>`,
       parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
+      reply_markup: buttons.length > 0 ? { inline_keyboard: buttons } : undefined,
     });
   });
   return webhookAck();
+}
+
+/* ------------------------------------------------------------------ *
+ * Buttons
+ * ------------------------------------------------------------------ */
+
+/**
+ * A tap on an inline button.
+ *
+ * Two things have to happen and only one of them can ride the webhook response, so the spinner is
+ * stopped with a real call and the card itself is returned as the body. Navigation edits the
+ * message that was tapped rather than adding another one below it, which is what makes a chat feel
+ * like a screen instead of a transcript.
+ */
+async function handleCallback(surface: Surface, tg: Telegram, update: TgUpdate): Promise<Response> {
+  const query = update.callback_query;
+  if (!query) return webhookAck();
+
+  await tg.answerCallback(query.id);
+
+  const action = decode(query.data);
+  const message = query.message;
+  if (!action || !message) return webhookAck();
+
+  const verdict = await meter("cb", String(query.from.id), LIMITS.command);
+  if (!verdict.allowed) return webhookAck();
+
+  const ctx: Ctx = {
+    surface,
+    tg,
+    chat: message.chat,
+    from: query.from,
+    threadId: message.message_thread_id,
+    isPrivate: message.chat.type === "private",
+    args: "symbol" in action ? action.symbol : "address" in action ? action.address : "",
+  };
+
+  const command =
+    action.kind === "price"
+      ? "price"
+      : action.kind === "buy"
+        ? "buy"
+        : action.kind === "sell"
+          ? "sell"
+          : action.kind === "token"
+            ? "token"
+            : action.kind;
+
+  const card = await route(command, ctx);
+  if (!card) return webhookAck();
+
+  // Editing keeps one card on screen; a card that cannot be edited (a different shape, or a
+  // message too old for Telegram to change) simply arrives as a new message instead.
+  if (card.editable) {
+    return Response.json({
+      method: "editMessageText",
+      chat_id: message.chat.id,
+      message_id: message.message_id,
+      text: card.text,
+      parse_mode: "HTML",
+      link_preview_options: card.preview ?? { is_disabled: true },
+      reply_markup: card.keyboard ? { inline_keyboard: card.keyboard } : undefined,
+    });
+  }
+  return reply(message, card);
 }
 
 /* ------------------------------------------------------------------ *
@@ -636,7 +730,7 @@ function reply(message: TgMessage, card: Card): Response {
     // removed, which is the cheapest avoidable mistake on this platform.
     message_thread_id: message.message_thread_id,
     link_preview_options: card.preview ?? { is_disabled: true },
-    reply_markup: card.keyboard ? { inline_keyboard: card.keyboard } : undefined,
+    reply_markup: card.replyKeyboard ?? (card.keyboard ? { inline_keyboard: card.keyboard } : undefined),
   };
   return webhookReply(params);
 }

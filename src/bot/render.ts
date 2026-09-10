@@ -1,17 +1,25 @@
 import { b, code, esc, link } from "@/lib/telegram/html";
-import type { InlineKeyboardButton, SendMessageParams } from "@/lib/telegram/api";
+import type { InlineKeyboardButton, ReplyKeyboard, SendMessageParams } from "@/lib/telegram/api";
 import { ago, compactUsd, move, pad, padStart, pct, shortAddress, usd } from "@/lib/format";
 import { stockLink, launchpadTokenLink, launchpadMarketsLink } from "@/lib/links";
 import type { V1Stock } from "@/services/bstocks";
 import { isTradable } from "@/services/bstocks";
 import { BASE_FEE_BPS, feeBpsAt, secondsUntilFairFee, type Market } from "@/services/launchpad";
 import { COPY } from "./copy";
+import { launchpadListButtons, marketButtons, stockButtons } from "./nav";
 
 /** A rendered reply: the text plus whatever buttons and preview belong with it. */
 export interface Card {
   text: string;
   keyboard?: InlineKeyboardButton[][];
   preview?: SendMessageParams["link_preview_options"];
+  /**
+   * Sent only where it is worth replacing the phone keyboard: the first message of a private chat.
+   * Attaching it to every reply would re-send the same rows forever for no benefit.
+   */
+  replyKeyboard?: ReplyKeyboard;
+  /** A callback reply edits the message that was tapped instead of adding one below it. */
+  editable?: boolean;
 }
 
 /**
@@ -74,17 +82,11 @@ export function stockCard(stock: V1Stock): Card {
   }
   lines.push("", i0(COPY.bstocks.footer));
 
-  const keyboard: InlineKeyboardButton[][] = [
-    [
-      { text: isTradable(stock) ? `Open ${stock.symbol}` : "Open in the app", url: href },
-      { text: "Share", switch_inline_query_chosen_chat: { query: stock.symbol, allow_user_chats: true, allow_group_chats: true } },
-    ],
-  ];
-
   return {
     text: lines.join("\n"),
-    keyboard,
+    keyboard: stockButtons(stock.symbol, stock.address, isTradable(stock)),
     preview: { url: href, prefer_small_media: true },
+    editable: true,
   };
 }
 
@@ -113,7 +115,11 @@ export function marketsCard(stocks: V1Stock[]): Card {
       "",
       i0(COPY.bstocks.footer),
     ].join("\n"),
+    // Tapping a ticker is the whole reason this table is worth sending: reading a row and pricing
+    // it should not be two different acts of remembering.
+    keyboard: marketButtons(sorted.map((s) => s.symbol)),
     preview: { is_disabled: true },
+    editable: true,
   };
 }
 
@@ -177,6 +183,7 @@ export function tokenCard(market: Market, now = Date.now(), side?: "buy" | "sell
 
   return {
     text: lines.join("\n"),
+    editable: true,
     keyboard: [
       [
         {
@@ -224,6 +231,8 @@ export function marketListCard(title: string, note: string, markets: Market[], n
       "",
       i0(COPY.launchpad.footer),
     ].join("\n"),
+    keyboard: launchpadListButtons(markets.map((m) => ({ symbol: m.symbol, token: m.token }))),
     preview: { is_disabled: true },
+    editable: true,
   };
 }

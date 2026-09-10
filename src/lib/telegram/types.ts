@@ -44,6 +44,14 @@ export const inlineQuerySchema = z.object({
   chat_type: z.string().optional(),
 });
 
+/** A tap on an inline button. `data` is at most 64 bytes, which shapes every route below. */
+export const callbackQuerySchema = z.object({
+  id: z.string(),
+  from: userSchema,
+  data: z.string().max(64).optional(),
+  message: messageSchema.optional(),
+});
+
 export const myChatMemberSchema = z.object({
   chat: chatSchema,
   from: userSchema,
@@ -56,6 +64,7 @@ export const updateSchema = z.object({
   edited_message: messageSchema.optional(),
   channel_post: messageSchema.optional(),
   inline_query: inlineQuerySchema.optional(),
+  callback_query: callbackQuerySchema.optional(),
   my_chat_member: myChatMemberSchema.optional(),
 });
 
@@ -63,6 +72,7 @@ export type TgUser = z.infer<typeof userSchema>;
 export type TgChat = z.infer<typeof chatSchema>;
 export type TgMessage = z.infer<typeof messageSchema>;
 export type TgInlineQuery = z.infer<typeof inlineQuerySchema>;
+export type TgCallbackQuery = z.infer<typeof callbackQuerySchema>;
 export type TgUpdate = z.infer<typeof updateSchema>;
 
 /**
@@ -72,4 +82,10 @@ export type TgUpdate = z.infer<typeof updateSchema>;
  * `message_reaction_count`; anything that depends on them has to name them here. `my_chat_member`
  * is in the default set and is what tells the bot it was added to or removed from a group.
  */
-export const ALLOWED_UPDATES = ["message", "edited_message", "inline_query", "my_chat_member"] as const;
+export const ALLOWED_UPDATES = [
+  "message",
+  "edited_message",
+  "inline_query",
+  "callback_query",
+  "my_chat_member",
+] as const;

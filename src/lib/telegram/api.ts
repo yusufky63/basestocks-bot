@@ -21,6 +21,8 @@ export interface LinkPreviewOptions {
 export interface InlineKeyboardButton {
   text: string;
   url?: string;
+  /** At most 64 bytes. Everything this bot encodes is a short verb plus a symbol or an address. */
+  callback_data?: string;
   /** Opens a chat picker with the query prefilled. The one field that teaches people inline mode. */
   switch_inline_query_chosen_chat?: {
     query: string;
@@ -29,13 +31,28 @@ export interface InlineKeyboardButton {
   };
 }
 
+/**
+ * The bar of buttons that replaces the keyboard in a private chat.
+ *
+ * This is the difference between a bot you have to remember commands for and one you can use with
+ * a thumb. `is_persistent` keeps it up instead of collapsing behind an icon nobody presses.
+ */
+export interface ReplyKeyboard {
+  keyboard: { text: string }[][];
+  resize_keyboard?: boolean;
+  is_persistent?: boolean;
+  input_field_placeholder?: string;
+}
+
+export type ReplyMarkup = { inline_keyboard: InlineKeyboardButton[][] } | ReplyKeyboard;
+
 export interface SendMessageParams {
   chat_id: number | string;
   text: string;
   parse_mode?: "HTML";
   message_thread_id?: number;
   link_preview_options?: LinkPreviewOptions;
-  reply_markup?: { inline_keyboard: InlineKeyboardButton[][] };
+  reply_markup?: ReplyMarkup;
   disable_notification?: boolean;
 }
 
@@ -122,6 +139,14 @@ export class Telegram {
     // `is_personal: false` because no inline result here depends on who asked, and that is a
     // property worth keeping true: inline results land in chats the bot was never added to.
     await this.call("answerInlineQuery", { inline_query_id, results, cache_time, is_personal: false });
+  }
+
+  /**
+   * Every callback query must be answered, whether or not anything else happens: until it is, the
+   * client shows a spinner on the button the person just pressed.
+   */
+  async answerCallback(id: string, text?: string): Promise<void> {
+    await this.call("answerCallbackQuery", { callback_query_id: id, text, cache_time: 1 });
   }
 
   async leaveChat(chat_id: number | string): Promise<void> {

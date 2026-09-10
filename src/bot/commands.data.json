@@ -1,6 +1,10 @@
 {
   "bstocks": [
     {
+      "command": "menu",
+      "description": "Buttons instead of commands"
+    },
+    {
       "command": "price",
       "description": "Price, reference and liquidity for one stock"
     },
@@ -30,6 +34,10 @@
     }
   ],
   "launchpad": [
+    {
+      "command": "menu",
+      "description": "Buttons instead of commands"
+    },
     {
       "command": "top",
       "description": "Tokens by 24h traded value"
